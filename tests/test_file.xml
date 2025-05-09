@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<actor ident="Actor">
+    <path>tests/output</path>
+    <states ident="Create" />
+    <states ident="Update" />
+    <messageset ident="ActorMessage">
+        <msgenum ident="Standard" />
+        <msgenum ident="Custom">
+            <enumvariant>CustomValue1</enumvariant>
+            <enumvariant>CustomValue2</enumvariant>
+        </msgenum>
+    </messageset>
+</actor>
