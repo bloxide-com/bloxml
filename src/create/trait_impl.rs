@@ -1,7 +1,6 @@
 use crate::blox::state::State;
 use std::error::Error;
 
-#[allow(dead_code)]
 pub fn generate_state_impls(state: &State) -> Result<String, Box<dyn Error>> {
     let parent_state = state
         .parent

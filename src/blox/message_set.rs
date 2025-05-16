@@ -1,24 +1,16 @@
 use serde::{Deserialize, Serialize};
 
-use super::msg_enum::MsgEnum;
+use super::enums::EnumDef;
 
 #[derive(Default, Serialize, Deserialize, Eq, PartialEq, Debug)]
-#[serde(rename = "messageset")]
-pub struct MessageSet {
-    #[serde(rename = "@ident")]
-    pub ident: String,
-    #[serde(rename = "msgenum")]
-    pub enums: Vec<MsgEnum>,
-}
+pub struct MessageSet(EnumDef);
 
 impl MessageSet {
-    pub fn new<S>(ident: S, enums: Vec<MsgEnum>) -> Self
-    where
-        S: Into<String>,
-    {
-        Self {
-            ident: ident.into(),
-            enums,
-        }
+    pub fn new(enum_def: EnumDef) -> Self {
+        Self(enum_def)
+    }
+
+    pub fn get(&self) -> &EnumDef {
+        &self.0
     }
 }

@@ -5,9 +5,10 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 
+use super::generate_message_set;
 use super::trait_impl;
 
-const MSG_MOD: &str = "message.rs";
+const MSG_MOD: &str = "messaging.rs";
 const EXT_STATE_MOD: &str = "ext_state.rs";
 const COMPONENT_MOD: &str = "component.rs";
 const RUNTIME_MOD: &str = "runtime.rs";
@@ -66,11 +67,21 @@ fn create_module_files(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Err
 }
 
 fn create_root_mod_rs(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Error>> {
-    let mod_rs_content = mods
+    let mut modules: Vec<String> = mods
         .iter()
-        // Generate module declarations by removing the .rs extension and adding pub mod
-        .map(|mod_file| format!("pub mod {};", mod_file.split('.').next().unwrap()))
-        .fold(String::new(), |acc, s| format!("{acc}\n{s}"));
+        .map(|mod_file| mod_file.split('.').next().unwrap().to_string())
+        .collect();
+
+    // Add messaging module if it exists
+    if mod_path.join("messaging.rs").exists() {
+        modules.push("messaging".to_string());
+    }
+
+    let mod_rs_content = modules
+        .iter()
+        .map(|mod_name| format!("pub mod {};", mod_name))
+        .collect::<Vec<_>>()
+        .join("\n");
 
     fs::write(mod_path.join("mod.rs"), mod_rs_content)
         .map_err(|e| format!("Error creating mod.rs file: {e}").into())
@@ -84,6 +95,12 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
     // states module
     let states_path = actor.create_states_path();
     create_states_module(&states_path, &actor.states)?;
+
+    // Generate message module if message set exists
+    if let Some(message_set) = &actor.message_set {
+        let message_module_content = generate_message_set(message_set)?;
+        fs::write(mod_path.join("messaging.rs"), message_module_content)?;
+    }
 
     create_root_mod_rs(&mod_path, &MODS)
 }
