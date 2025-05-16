@@ -1,12 +1,12 @@
-use crate::actor::Actor;
-use crate::state::State;
-use std::error::Error;
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::Path;
+use crate::blox::{actor::Actor, state::States};
+use std::{
+    error::Error,
+    fs::{self, File},
+    io::Write,
+    path::Path,
+};
 
-use super::generate_message_set;
-use super::trait_impl;
+use super::{generate_message_set, generate_state_enum_impl, state_gen};
 
 const MSG_MOD: &str = "messaging.rs";
 const EXT_STATE_MOD: &str = "ext_state.rs";
@@ -20,12 +20,13 @@ fn create_module_dir(path: &Path) -> Result<(), String> {
         .map_err(|e| format!("Error creating directory {}: {e}", path.display()))
 }
 
-fn create_states_module(path: &Path, states: &[State]) -> Result<(), Box<dyn Error>> {
+fn create_states_module(path: &Path, states: &States) -> Result<(), Box<dyn Error>> {
     create_module_dir(path)?;
     create_state_files(path, states)?;
 
     // Create mod.rs in states directory
     let states_mod_rs = states
+        .states
         .iter()
         .map(|state| format!("pub mod {};", state.ident.to_lowercase()))
         .fold(String::new(), |acc, s| format!("{acc}{s}\n"));
@@ -33,13 +34,19 @@ fn create_states_module(path: &Path, states: &[State]) -> Result<(), Box<dyn Err
     let mod_rs = path.join("mod.rs");
     let mut mod_rs =
         File::create(&mod_rs).map_err(|e| format!("Error creating states/mod.rs: {}", e))?;
+
     mod_rs
         .write_all(states_mod_rs.as_bytes())
-        .map_err(|e| format!("Error writing states/mod.rs: {}", e).into())
+        .map_err(|e| format!("Error writing states/mod.rs: {e}"))?;
+
+    mod_rs
+        .write_all(generate_state_enum_impl(states)?.as_bytes())
+        .map_err(|e| format!("Error writing states/mod.rs: {e}").into())
 }
 
-fn create_state_files(path: &Path, states: &[State]) -> Result<(), Box<dyn Error>> {
+fn create_state_files(path: &Path, states: &States) -> Result<(), Box<dyn Error>> {
     let state_files = states
+        .states
         .iter()
         .map(|state| state.ident.to_lowercase())
         .map(|mod_file| path.join(format!("{mod_file}.rs")))
@@ -47,10 +54,11 @@ fn create_state_files(path: &Path, states: &[State]) -> Result<(), Box<dyn Error
         .collect::<Result<Vec<File>, _>>()?;
 
     states
+        .states
         .iter()
         .zip(state_files)
         .try_for_each(|(state, mut file)| {
-            let impl_content = trait_impl::generate_state_impls(state)?;
+            let impl_content = state_gen::generate_inner_states(state)?;
             file.write_all(impl_content.as_bytes())
                 .map_err(|e| format!("Error writing state impl: {e}").into())
         })
@@ -88,6 +96,9 @@ fn create_root_mod_rs(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Erro
 }
 
 pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
+    // Validate the states before generating code
+    actor.states.validate()?;
+
     let mod_path = actor.create_mod_path();
     create_module_dir(&mod_path)?;
     create_module_files(&mod_path, &MODS)?;
