@@ -82,10 +82,7 @@ pub enum {enum_name} {{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blox::{
-        enum_variant::{EnumVariant, Link},
-        enums::EnumDef,
-    };
+    use crate::blox::enums::{EnumDef, EnumVariant, Link};
 
     #[test]
     fn test_generate_message_set() {
@@ -97,7 +94,7 @@ mod tests {
                     ident: "Variant1".to_string(),
                     args: vec![Link::new("SomeType")],
                 },
-                EnumVariant::new("Variant2"),
+                EnumVariant::new("Variant2", vec![]),
             ],
         );
         let message_set = MessageSet::new(enum_def);
