@@ -1,0 +1,29 @@
+{
+  "ident": "Actor",
+  "path": "tests/output",
+  "states": [
+    {
+      "ident": "Create",
+      "parent": null
+    },
+    {
+      "ident": "Update",
+      "parent": null
+    }
+  ],
+  "message_set": {
+    "ident": "ActorMessage",
+    "enumvariant": [
+      {
+        "ident": "CustomValue1",
+        "args": [
+          "bloxide_core::messaging::Standard"
+        ]
+      },
+      {
+        "ident": "CustomValue2",
+        "args": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "ident": "Custom",
+  "enumvariant": [
+    {
+      "ident": "CustomValue1",
+      "args": [
+        "bloxide_core::messaging::Standard"
+      ]
+    },
+    {
+      "ident": "CustomValue2",
+      "args": []
+    }
+  ]
+}
