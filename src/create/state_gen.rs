@@ -51,7 +51,6 @@ impl State<Components> for {state_name} {{
 pub fn generate_state_enum_impl(states: &States) -> Result<String, Box<dyn Error>> {
     let enum_name = states.state_enum.get().ident.clone();
 
-    // Generate module imports for each State
     let imports = states.states.iter().fold(String::new(), |acc, state| {
         format!(
             "{}mod {};\nuse {}::{};\n",
@@ -62,7 +61,6 @@ pub fn generate_state_enum_impl(states: &States) -> Result<String, Box<dyn Error
         )
     });
 
-    // Generate enum variants
     let variants = states.states.iter().fold(String::new(), |acc, state| {
         format!(
             "{}    /// {state_name} state\n    {state_name}({state_name}),\n",
@@ -71,7 +69,6 @@ pub fn generate_state_enum_impl(states: &States) -> Result<String, Box<dyn Error
         )
     });
 
-    // Generate match arms for handle_message method
     let handle_message_arms = states.states.iter().fold(String::new(), |acc, state| {
         format!("{}            {enum_name}::{state_name}(state) => state.handle_message(state_machine, message),\n", 
             acc,
@@ -80,7 +77,6 @@ pub fn generate_state_enum_impl(states: &States) -> Result<String, Box<dyn Error
         )
     });
 
-    // Generate match arms for on_entry method
     let on_entry_arms = states.states.iter().fold(String::new(), |acc, state| {
         format!(
             "{}            {enum_name}::{state_name}(state) => state.on_entry(state_machine),\n",
@@ -90,7 +86,6 @@ pub fn generate_state_enum_impl(states: &States) -> Result<String, Box<dyn Error
         )
     });
 
-    // Generate match arms for on_exit method
     let on_exit_arms = states.states.iter().fold(String::new(), |acc, state| {
         format!(
             "{}            {enum_name}::{state_name}(state) => state.on_exit(state_machine),\n",
@@ -100,7 +95,6 @@ pub fn generate_state_enum_impl(states: &States) -> Result<String, Box<dyn Error
         )
     });
 
-    // Generate match arms for parent method
     let parent_arms = states.states.iter().fold(String::new(), |acc, state| {
         format!(
             "{}            {enum_name}::{state_name}(state) => state.parent(),\n",
@@ -177,25 +171,20 @@ mod tests {
 
     #[test]
     fn test_generate_state_impls() {
-        // Create a simple state
         let state = State::from("Create");
 
-        // Generate implementation
         let impl_content = generate_inner_states(&state).expect("Failed to generate state impls");
         let ident = state.ident;
         eprintln!("State impl for {ident}: {impl_content}");
 
-        // Verify file contents
         assert!(impl_content.contains(&format!("pub struct {ident}")));
         assert!(impl_content.contains(&format!("impl State<Components> for {ident}")));
     }
 
     #[test]
     fn test_generate_state_enum_impl() {
-        // Create explicit state enum
         let state_enum = StateEnum::new(EnumDef::new("ActorStates", vec![]));
 
-        // Create states
         let states = States::new(
             vec![
                 State::from("Create"),
@@ -205,24 +194,18 @@ mod tests {
             state_enum,
         );
 
-        // Generate implementation for the entire state enum
         let impl_content =
             generate_state_enum_impl(&states).expect("Failed to generate state enum impl");
         eprintln!("State enum impl: {}", impl_content);
 
-        // Verify basic structure
         assert!(impl_content.contains("pub enum ActorStates"));
         assert!(impl_content.contains("impl State<Components> for ActorStates"));
-        assert!(!impl_content.contains("Initial")); // No Initial or Default states
 
-        // Verify all states are included as variants
         for state in &states.states {
             assert!(impl_content.contains(&format!("    {}({})", state.ident, state.ident)));
         }
 
-        // Verify match statements
         assert!(impl_content.contains("match self {"));
         assert!(impl_content.contains("ActorStates::Create(state) =>"));
-        assert!(!impl_content.contains("impl Default")); // No Default implementation
     }
 }

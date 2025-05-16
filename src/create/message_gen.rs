@@ -9,7 +9,6 @@ use std::error::Error;
 /// # Returns
 /// A `Result` containing the generated Rust code as a `String` or an error
 pub fn generate_message_set(msg_set: &MessageSet) -> Result<String, Box<dyn Error>> {
-    // Access the wrapped MsgEnum
     let enum_def = msg_set.get();
 
     let mut output = format!(
@@ -39,7 +38,6 @@ use bloxide_tokio::messaging::{{Message, MessageSet}};
 fn generate_enum_definition(enum_def: &EnumDef) -> Result<String, Box<dyn Error>> {
     let enum_name = &enum_def.ident;
 
-    // Generate variants directly from the enum_def.variants
     let variants = enum_def
         .variants
         .iter()
@@ -52,7 +50,6 @@ fn generate_enum_definition(enum_def: &EnumDef) -> Result<String, Box<dyn Error>
                     ident = variant.ident
                 )
             } else {
-                // Tuple variant with args
                 let args = variant
                     .args
                     .iter()
@@ -86,7 +83,6 @@ mod tests {
 
     #[test]
     fn test_generate_message_set() {
-        // Create a MessageSet with a MsgEnum with one variant having an arg
         let enum_def = EnumDef::new(
             "TestMessageSet",
             vec![
@@ -101,7 +97,6 @@ mod tests {
 
         let result = generate_message_set(&message_set).expect("Failed to generate message set");
 
-        // Verify the generated code contains expected patterns
         assert!(result.contains("pub enum TestMessageSet"));
         assert!(result.contains("Variant1(SomeType)"));
         assert!(result.contains("Variant2,"));

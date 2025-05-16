@@ -48,7 +48,6 @@ impl Actor {
         serde_json::from_reader(file).map_err(From::from)
     }
 
-    // Helper to create an Actor from individual states with explicit StateEnum
     pub fn with_states<P, S>(
         ident: S,
         path: P,
