@@ -1,8 +1,8 @@
+use std::fmt::{self, Display};
+
 use serde::{Deserialize, Serialize};
 
-use super::enum_variant::EnumVariant;
-
-#[derive(Default, Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
 #[serde(rename = "enum")]
 pub struct EnumDef {
     pub ident: String,
@@ -22,9 +22,53 @@ impl EnumDef {
     }
 }
 
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[serde(rename = "enumvariant")]
+pub struct EnumVariant {
+    pub ident: String,
+    pub args: Vec<Link>,
+}
+
+impl EnumVariant {
+    pub fn new<S>(ident: S, args: Vec<Link>) -> Self
+    where
+        S: Into<String>,
+    {
+        Self {
+            ident: ident.into(),
+            args,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[serde(rename = "link")]
+pub struct Link(String);
+
+impl Link {
+    pub fn new<S>(link: S) -> Self
+    where
+        S: Into<String>,
+    {
+        Self(link.into())
+    }
+}
+
+impl Display for Link {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for Link {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::enum_variant::Link;
+    use crate::enums::Link;
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -37,11 +81,11 @@ mod tests {
         EnumDef::new(
             "Custom",
             vec![
-                EnumVariant {
-                    ident: "CustomValue1".to_string(),
-                    args: vec![Link::new("bloxide_core::messaging::Standard")],
-                },
-                EnumVariant::new("CustomValue2"),
+                EnumVariant::new(
+                    "CustomValue1",
+                    vec![Link::new("bloxide_core::messaging::Standard")],
+                ),
+                EnumVariant::new("CustomValue2", vec![]),
             ],
         )
     }
@@ -56,7 +100,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_serialize_enum() {
         let expected = create_expected_enum();
         let serialized =

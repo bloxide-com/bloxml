@@ -11,24 +11,35 @@ const TEST_OUTPUT_DIR: &str = "tests/output";
 #[cfg(test)]
 pub fn create_test_actor() -> Actor {
     use blox::{
-        enum_variant::{EnumVariant, Link},
-        enums::EnumDef,
+        enums::{EnumDef, EnumVariant, Link},
         message_set::MessageSet,
-        state::State,
+        state::{State, StateEnum, States},
     };
+
+    // Create explicit state enum
+    let state_enum = StateEnum::new(EnumDef::new("ActorStates", vec![]));
+
+    // Create states
+    let states = States::new(
+        vec![
+            State::from("Create"),
+            State::new("Update", Some("Create".to_string()), None),
+        ],
+        state_enum,
+    );
 
     Actor::new(
         "Actor",
         TEST_OUTPUT_DIR,
-        vec![State::new("Create"), State::new("Update")],
+        states,
         Some(MessageSet::new(EnumDef::new(
             "ActorMessage",
             vec![
-                EnumVariant {
-                    ident: "CustomValue1".to_string(),
-                    args: vec![Link::new("bloxide_core::messaging::Standard")],
-                },
-                EnumVariant::new("CustomValue2"),
+                EnumVariant::new(
+                    "CustomValue1",
+                    vec![Link::new("bloxide_core::messaging::Standard")],
+                ),
+                EnumVariant::new("CustomValue2", vec![]),
             ],
         ))),
     )
