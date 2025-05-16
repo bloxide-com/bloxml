@@ -2,21 +2,23 @@ use std::{error::Error, fs::OpenOptions, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::{message_set::MessageSet, state::State};
+use super::{
+    message_set::MessageSet,
+    state::{State, StateEnum, States},
+};
 use serde_json;
 
-#[derive(Default, Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
 #[serde(rename = "actor")]
 pub struct Actor {
     pub ident: String,
     pub path: PathBuf,
-    #[serde(default)]
-    pub states: Vec<State>,
+    pub states: States,
     pub message_set: Option<MessageSet>,
 }
 
 impl Actor {
-    pub fn new<P, S>(ident: S, path: P, states: Vec<State>, message_set: Option<MessageSet>) -> Self
+    pub fn new<P, S>(ident: S, path: P, states: States, message_set: Option<MessageSet>) -> Self
     where
         P: Into<PathBuf>,
         S: Into<String>,
@@ -44,5 +46,20 @@ impl Actor {
             .create(false)
             .open(path)?;
         serde_json::from_reader(file).map_err(From::from)
+    }
+
+    // Helper to create an Actor from individual states with explicit StateEnum
+    pub fn with_states<P, S>(
+        ident: S,
+        path: P,
+        states: Vec<State>,
+        state_enum: StateEnum,
+        message_set: Option<MessageSet>,
+    ) -> Self
+    where
+        P: Into<PathBuf>,
+        S: Into<String>,
+    {
+        Self::new(ident, path, States::new(states, state_enum), message_set)
     }
 }
