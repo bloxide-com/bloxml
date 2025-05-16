@@ -1,16 +1,22 @@
 {
   "ident": "Actor",
   "path": "tests/output",
-  "states": [
-    {
-      "ident": "Create",
-      "parent": null
+  "states": {
+    "state_enum": {
+      "ident": "ActorStates",
+      "enumvariant": []
     },
-    {
-      "ident": "Update",
-      "parent": null
-    }
-  ],
+    "states": [
+      {
+        "ident": "Create",
+        "parent": null
+      },
+      {
+        "ident": "Update",
+        "parent": "Create"
+      }
+    ]
+  },
   "message_set": {
     "ident": "ActorMessage",
     "enumvariant": [
