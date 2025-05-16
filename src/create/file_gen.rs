@@ -24,7 +24,6 @@ fn create_states_module(path: &Path, states: &States) -> Result<(), Box<dyn Erro
     create_module_dir(path)?;
     create_state_files(path, states)?;
 
-    // Create mod.rs in states directory
     let states_mod_rs = states
         .states
         .iter()
@@ -80,7 +79,6 @@ fn create_root_mod_rs(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Erro
         .map(|mod_file| mod_file.split('.').next().unwrap().to_string())
         .collect();
 
-    // Add messaging module if it exists
     if mod_path.join("messaging.rs").exists() {
         modules.push("messaging".to_string());
     }
@@ -96,18 +94,15 @@ fn create_root_mod_rs(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Erro
 }
 
 pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
-    // Validate the states before generating code
     actor.states.validate()?;
 
     let mod_path = actor.create_mod_path();
     create_module_dir(&mod_path)?;
     create_module_files(&mod_path, &MODS)?;
 
-    // states module
     let states_path = actor.create_states_path();
     create_states_module(&states_path, &actor.states)?;
 
-    // Generate message module if message set exists
     if let Some(message_set) = &actor.message_set {
         let message_module_content = generate_message_set(message_set)?;
         fs::write(mod_path.join("messaging.rs"), message_module_content)?;
