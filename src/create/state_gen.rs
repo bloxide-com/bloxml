@@ -53,9 +53,8 @@ pub fn generate_state_enum_impl(states: &States) -> Result<String, Box<dyn Error
 
     let imports = states.states.iter().fold(String::new(), |acc, state| {
         format!(
-            "{}mod {};\nuse {}::{};\n",
+            "{}use {}::{};\n",
             acc,
-            state.ident.to_lowercase(),
             state.ident.to_lowercase(),
             state.ident
         )
