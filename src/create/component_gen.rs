@@ -11,7 +11,7 @@ pub fn generate_component(actor: &Actor) -> Result<String, Box<dyn Error>> {
         .message_set
         .as_ref()
         .map(|ms| ms.get().ident.clone())
-        .unwrap_or_else(|| format!("{}MessageSet", actor_name));
+        .unwrap_or_else(|| format!("{actor_name}MessageSet"));
 
     // Generate message handles and receivers
     let handle_fields = if !actor.message_handles.handles.is_empty() {
@@ -197,12 +197,9 @@ fn format_handle_field(handle: &MessageHandle, actor_name: &str) -> String {
     };
 
     let comment = if handle.is_standard {
-        format!("/// Handle for sending standard system messages")
+        "/// Handle for sending standard system messages".to_string()
     } else {
-        format!(
-            "/// Handle for sending {}-specific messages",
-            message_identifier
-        )
+        format!("/// Handle for sending {message_identifier}-specific messages")
     };
 
     // Determine the proper type for the handle
@@ -221,7 +218,7 @@ fn format_handle_field(handle: &MessageHandle, actor_name: &str) -> String {
         }
     };
 
-    format!("    {}\n    pub {}: {},", comment, name, handle_type)
+    format!("    {comment}\n    pub {name}: {handle_type},")
 }
 
 // Helper function to format a receiver field
@@ -241,9 +238,9 @@ fn format_receiver_field(receiver: &MessageReceiver, actor_name: &str) -> String
     };
 
     let comment = if receiver.is_standard {
-        format!("/// Receiver for standard system messages")
+        "/// Receiver for standard system messages".to_string()
     } else {
-        format!("/// Receiver for {}-specific messages", message_identifier)
+        format!("/// Receiver for {message_identifier}-specific messages")
     };
 
     // Determine the proper type for the receiver
@@ -262,7 +259,7 @@ fn format_receiver_field(receiver: &MessageReceiver, actor_name: &str) -> String
         }
     };
 
-    format!("    {}\n    pub {}: {},", comment, name, receiver_type)
+    format!("    {comment}\n    pub {name}: {receiver_type},")
 }
 
 #[cfg(test)]
@@ -294,25 +291,25 @@ mod tests {
 
         // Test that actor handle and receiver are included
         let actor_name = test_actor.ident.to_lowercase();
-        assert!(component_content.contains(&format!("pub {}_handle:", actor_name)));
-        assert!(component_content.contains(&format!("pub {}_rx:", actor_name)));
+        assert!(component_content.contains(&format!("pub {actor_name}_handle:")));
+        assert!(component_content.contains(&format!("pub {actor_name}_rx:")));
 
         // Test that message-specific handles and receivers are included (if any)
         if let Some(message_set) = &test_actor.message_set {
             for variant in &message_set.get().variants {
                 let message_name = variant.ident.to_lowercase();
-                let handle_name = format!("{}_handle", message_name);
-                let rx_name = format!("{}_rx", message_name);
+                let handle_name = format!("{message_name}_handle");
+                let rx_name = format!("{message_name}_rx");
 
                 assert!(
                     component_content
                         .to_lowercase()
-                        .contains(&format!("pub {}:", handle_name))
+                        .contains(&format!("pub {handle_name}:"))
                 );
                 assert!(
                     component_content
                         .to_lowercase()
-                        .contains(&format!("pub {}:", rx_name))
+                        .contains(&format!("pub {rx_name}:"))
                 );
             }
         }
