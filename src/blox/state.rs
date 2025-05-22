@@ -60,30 +60,37 @@ impl States {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        for state in &self.states {
-            if let Some(parent) = &state.parent {
-                if !self.states.iter().any(|s| &s.ident == parent) {
-                    return Err(format!(
-                        "State '{}' has unknown parent '{}'",
-                        state.ident, parent
-                    ));
-                }
-            }
+        if let Some(state) = self.states.iter().find(|state| {
+            // find state with a parent not in the list of states
+            state.parent.as_ref().map_or(false, |parent| {
+                !self.states.iter().any(|s| &s.ident == parent)
+            })
+        }) {
+            return Err(format!(
+                "State '{}' has unknown parent '{}'",
+                state.ident,
+                state.parent.as_ref().unwrap()
+            ));
         }
 
         for variant in &self.state_enum.get().variants {
-            for arg in &variant.args {
-                // Try to check if the argument references a state
-                let arg_str = arg.to_string();
-                if !arg_str.contains("::") && !self.states.iter().any(|s| s.ident == arg_str) {
-                    return Err(format!(
-                        "Variant '{}' references unknown state '{}'",
-                        variant.ident, arg_str
-                    ));
-                }
-            }
+            variant
+                .args
+                .iter()
+                .find_map(|arg| {
+                    // check for variant args that are not states
+                    let arg_str = arg.to_string();
+                    if !arg_str.contains("::") && !self.states.iter().any(|s| s.ident == arg_str) {
+                        Some(format!(
+                            "Variant '{ident}' references unknown state '{arg_str}'",
+                            ident = variant.ident
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .map_or(Ok(()), Err)?;
         }
-
         Ok(())
     }
 }
