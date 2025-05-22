@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-use super::{generate_message_set, generate_state_enum_impl, state_gen};
+use super::{generate_component, generate_message_set, generate_state_enum_impl, state_gen};
 
 const MSG_MOD: &str = "messaging.rs";
 const EXT_STATE_MOD: &str = "ext_state.rs";
@@ -107,6 +107,60 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
         let message_module_content = generate_message_set(message_set)?;
         fs::write(mod_path.join("messaging.rs"), message_module_content)?;
     }
+
+    // Generate component.rs
+    let component_content = generate_component(actor)?;
+    fs::write(mod_path.join(COMPONENT_MOD), component_content)?;
+
+    // Generate placeholder files for ext_state.rs and runtime.rs
+    let placeholder_ext_state = format!(
+        r#"//! # {} Extended State
+//! 
+//! Extended state for the {} component.
+//! This file defines the extended state data structure that persists across state transitions.
+
+/// Extended state for the {} component
+pub struct {}ExtState {{
+    // Add your state fields here
+}}
+"#,
+        actor.ident, actor.ident, actor.ident, actor.ident
+    );
+    fs::write(mod_path.join(EXT_STATE_MOD), placeholder_ext_state)?;
+
+    let actor_name = actor.ident.clone();
+    let placeholder_runtime = format!(
+        r#"//! # {actor_name} Runtime
+//!
+//! Runtime types for the {actor_name} component.
+//! This file defines the runtime handles, channels, and other types used for communication.
+
+use bloxide_tokio::{{channel::{{mpsc, Sender}}, runtime::RuntimeHandle}};
+
+/// Handle for sending messages to the {actor_name} actor
+#[derive(Clone)]
+pub struct {actor_name}Handle {{
+    // Add fields here
+}}
+
+/// Receiver type for {actor_name} messages
+pub struct {actor_name}Rx {{
+    // Add fields here
+}}
+
+/// Handle for sending messages to the execute actor
+#[derive(Clone)]
+pub struct ExecHandle {{
+    // Add fields here
+}}
+
+/// Receiver type for execute messages
+pub struct ExecRx {{
+    // Add fields here
+}}
+"#,
+    );
+    fs::write(mod_path.join(RUNTIME_MOD), placeholder_runtime)?;
 
     create_root_mod_rs(&mod_path, &MODS)
 }
