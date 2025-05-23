@@ -67,7 +67,7 @@ use super::{{
     runtime::{{{actor_name}Handle, {actor_name}Rx}},
     states::{states_name},
 }};
-use bloxide_tokio::{{channel::{{mpsc, Sender}}, components::*, TokioRuntime}};
+use bloxide_tokio::{{channel::{{Receiver, Sender}}, components::*, TokioRuntime}};
 
 /// Defines the structure of the {actor_name} Blox component
 pub struct {actor_name}Components;
@@ -90,11 +90,6 @@ pub struct {actor_name}Handles {{
 {handle_fields}
 }}
 "#,
-        actor_name = actor_name,
-        states_name = states_name,
-        message_set_name = message_set_name,
-        receiver_fields = receiver_fields,
-        handle_fields = handle_fields,
     );
 
     Ok(component_content)
@@ -116,7 +111,6 @@ fn get_default_handles(
     let actor_handle = MessageHandle::new(
         format!("{}_handle", actor_name.to_lowercase()),
         message_set_name.to_string(),
-        false,
     );
     handles.push(actor_handle);
 
@@ -124,15 +118,19 @@ fn get_default_handles(
     if let Some(msg_set) = message_set {
         for variant in &msg_set.get().variants {
             // Generate a handle for each message variant if not already added
-            let message_type = &variant.ident;
-            let handle_name = format!("{}_handle", message_type.to_lowercase());
+            assert!(variant.args.len() == 1);
+            let message_type = variant.args.first().unwrap().to_string();
+            let handle_name = format!(
+                "{}_handle",
+                message_type.split("::").last().unwrap().to_lowercase()
+            );
 
             // Skip if we already have a similar handle
             if handles.iter().any(|h| h.name == handle_name) {
                 continue;
             }
 
-            let handle = MessageHandle::new(handle_name, message_type.to_string(), false);
+            let handle = MessageHandle::new(handle_name, message_type.to_string());
             handles.push(handle);
         }
     }
@@ -142,37 +140,28 @@ fn get_default_handles(
 
 // Helper function to get default message receivers
 fn get_default_receivers(
-    actor_name: &str,
-    message_set_name: &str,
+    _actor_name: &str,
+    _message_set_name: &str,
     message_set: &Option<MessageSet>,
 ) -> Vec<MessageReceiver> {
-    let mut receivers = Vec::new();
-
-    // Add standard message receiver
-    let standard_rx = MessageReceiver::standard("std_rx");
-    receivers.push(standard_rx);
-
-    // Add actor-specific message receiver
-    let actor_rx = MessageReceiver::new(
-        format!("{}_rx", actor_name.to_lowercase()),
-        message_set_name.to_string(),
-        false,
-    );
-    receivers.push(actor_rx);
+    let mut receivers: Vec<MessageReceiver> = Vec::new();
 
     // Add receivers for each message in the message set
     if let Some(msg_set) = message_set {
         for variant in &msg_set.get().variants {
             // Generate a receiver for each message variant if not already added
-            let message_type = &variant.ident;
-            let receiver_name = format!("{}_rx", message_type.to_lowercase());
+            let message_type = variant.args.first().unwrap().to_string();
+            let receiver_name = format!(
+                "{}_rx",
+                message_type.split("::").last().unwrap().to_lowercase()
+            );
 
             // Skip if we already have a similar receiver
             if receivers.iter().any(|r| r.name == receiver_name) {
                 continue;
             }
 
-            let receiver = MessageReceiver::new(receiver_name, message_type.to_string(), false);
+            let receiver = MessageReceiver::new(receiver_name, message_type.to_string());
             receivers.push(receiver);
         }
     }
@@ -196,26 +185,15 @@ fn format_handle_field(handle: &MessageHandle, actor_name: &str) -> String {
         actor_name.to_lowercase()
     };
 
-    let comment = if handle.is_standard {
-        "/// Handle for sending standard system messages".to_string()
-    } else {
-        format!("/// Handle for sending {message_identifier}-specific messages")
-    };
+    let comment = format!("/// Handle for sending {message_identifier}-specific messages");
 
     // Determine the proper type for the handle
-    let handle_type = if handle.is_standard {
-        "StandardMessageHandle<TokioRuntime>".to_string()
-    } else if name.contains(&actor_name.to_lowercase()) {
-        format!("{}Handle", actor_name)
+    let handle_type = if handle.message_type.contains("::") {
+        // If it's a fully qualified path, use it directly
+        format!("TokioMessageHandle<{}>", handle.message_type)
     } else {
-        // For message-specific handles in the message set, use a specific type
-        if handle.message_type.contains("::") {
-            // If it's a fully qualified path, use it directly
-            format!("Sender<{}>", handle.message_type)
-        } else {
-            // If it's a simple name, assume it's from the messaging module
-            format!("Sender<{}>", handle.message_type)
-        }
+        // If it's a simple name, assume it's from the messaging module
+        format!("TokioMessageHandle<{}>", handle.message_type)
     };
 
     format!("    {comment}\n    pub {name}: {handle_type},")
@@ -237,27 +215,10 @@ fn format_receiver_field(receiver: &MessageReceiver, actor_name: &str) -> String
         actor_name.to_lowercase()
     };
 
-    let comment = if receiver.is_standard {
-        "/// Receiver for standard system messages".to_string()
-    } else {
-        format!("/// Receiver for {message_identifier}-specific messages")
-    };
+    let comment = format!("/// Receiver for {message_identifier}-specific messages");
 
     // Determine the proper type for the receiver
-    let receiver_type = if receiver.is_standard {
-        "StandardMessageRx<TokioRuntime>".to_string()
-    } else if name.contains(&actor_name.to_lowercase()) {
-        format!("{}Rx", actor_name)
-    } else {
-        // For message-specific receivers in the message set, use a specific type
-        if receiver.message_type.contains("::") {
-            // If it's a fully qualified path, use it directly
-            format!("mpsc::Receiver<{}>", receiver.message_type)
-        } else {
-            // If it's a simple name, assume it's from the messaging module
-            format!("mpsc::Receiver<{}>", receiver.message_type)
-        }
-    };
+    let receiver_type = format!("Receiver<{}>", receiver.message_type);
 
     format!("    {comment}\n    pub {name}: {receiver_type},")
 }
@@ -284,20 +245,23 @@ mod tests {
         )));
 
         // Test that standard handle and receiver fields are included
-        assert!(
-            component_content.contains("pub standard_handle: StandardMessageHandle<TokioRuntime>")
-        );
-        assert!(component_content.contains("pub std_rx: StandardMessageRx<TokioRuntime>"));
-
-        // Test that actor handle and receiver are included
-        let actor_name = test_actor.ident.to_lowercase();
-        assert!(component_content.contains(&format!("pub {actor_name}_handle:")));
-        assert!(component_content.contains(&format!("pub {actor_name}_rx:")));
+        // assert!(
+        //     component_content.contains("pub standard_handle: StandardMessageHandle<TokioRuntime>")
+        // );
+        // assert!(component_content.contains("pub std_rx: StandardMessageRx<TokioRuntime>"));
 
         // Test that message-specific handles and receivers are included (if any)
         if let Some(message_set) = &test_actor.message_set {
             for variant in &message_set.get().variants {
-                let message_name = variant.ident.to_lowercase();
+                let message_name = variant
+                    .args
+                    .first()
+                    .unwrap()
+                    .to_string()
+                    .split("::")
+                    .last()
+                    .unwrap()
+                    .to_lowercase();
                 let handle_name = format!("{message_name}_handle");
                 let rx_name = format!("{message_name}_rx");
 

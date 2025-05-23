@@ -53,7 +53,7 @@ fn generate_enum_definition(enum_def: &EnumDef) -> Result<String, Box<dyn Error>
                 let args = variant
                     .args
                     .iter()
-                    .map(ToString::to_string)
+                    .map(|arg| format!("Message<{arg}>"))
                     .collect::<Vec<String>>()
                     .join(", ");
 
@@ -90,7 +90,7 @@ mod tests {
                     ident: "Variant1".to_string(),
                     args: vec![Link::new("SomeType")],
                 },
-                EnumVariant::new("Variant2", vec![]),
+                EnumVariant::new("Variant2", vec![Link::new("SomeType2")]),
             ],
         );
         let message_set = MessageSet::new(enum_def);
@@ -98,8 +98,8 @@ mod tests {
         let result = generate_message_set(&message_set).expect("Failed to generate message set");
 
         assert!(result.contains("pub enum TestMessageSet"));
-        assert!(result.contains("Variant1(SomeType)"));
-        assert!(result.contains("Variant2,"));
+        assert!(result.contains("Variant1(Message<SomeType>)"));
+        assert!(result.contains("Variant2(Message<SomeType2>)"));
         assert!(result.contains("impl MessageSet for TestMessageSet"));
     }
 }

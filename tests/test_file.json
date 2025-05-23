@@ -28,7 +28,9 @@
       },
       {
         "ident": "CustomValue2",
-        "args": []
+        "args": [
+          "CustomArgs"
+        ]
       }
     ]
   }

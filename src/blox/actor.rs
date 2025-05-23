@@ -88,7 +88,6 @@ impl Actor {
         let actor_handle = MessageHandle::new(
             format!("{}_handle", actor_name.to_lowercase()),
             message_set_name.clone(),
-            false,
         );
         self.message_handles.add_handle(actor_handle);
 
@@ -100,7 +99,6 @@ impl Actor {
         let actor_rx = MessageReceiver::new(
             format!("{}_rx", actor_name.to_lowercase()),
             message_set_name.clone(),
-            false,
         );
         self.message_receivers.add_receiver(actor_rx);
 
@@ -118,7 +116,7 @@ impl Actor {
                     .iter()
                     .any(|h| h.name == handle_name)
                 {
-                    let handle = MessageHandle::new(handle_name, message_type.to_string(), false);
+                    let handle = MessageHandle::new(handle_name, message_type.to_string());
                     self.message_handles.add_handle(handle);
                 }
 
@@ -132,8 +130,7 @@ impl Actor {
                     .iter()
                     .any(|r| r.name == receiver_name)
                 {
-                    let receiver =
-                        MessageReceiver::new(receiver_name, message_type.to_string(), false);
+                    let receiver = MessageReceiver::new(receiver_name, message_type.to_string());
                     self.message_receivers.add_receiver(receiver);
                 }
             }

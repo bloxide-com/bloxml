@@ -7,30 +7,23 @@ pub struct MessageHandle {
     pub name: String,
     /// Type of message this handle sends
     pub message_type: String,
-    /// Is this handle for standard system messages
-    pub is_standard: bool,
     /// Additional metadata
     pub metadata: Vec<String>,
 }
 
 impl MessageHandle {
     /// Create a new message handle
-    pub fn new(
-        name: impl Into<String>,
-        message_type: impl Into<String>,
-        is_standard: bool,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, message_type: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             message_type: message_type.into(),
-            is_standard,
             metadata: Vec::new(),
         }
     }
 
     /// Create a standard system message handle
     pub fn standard(name: impl Into<String>) -> Self {
-        Self::new(name, "StandardMessage", true)
+        Self::new(name, "StandardMessage")
     }
 }
 
@@ -41,30 +34,23 @@ pub struct MessageReceiver {
     pub name: String,
     /// Type of message this receiver accepts
     pub message_type: String,
-    /// Is this receiver for standard system messages
-    pub is_standard: bool,
     /// Additional metadata
     pub metadata: Vec<String>,
 }
 
 impl MessageReceiver {
     /// Create a new message receiver
-    pub fn new(
-        name: impl Into<String>,
-        message_type: impl Into<String>,
-        is_standard: bool,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, message_type: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             message_type: message_type.into(),
-            is_standard,
             metadata: Vec::new(),
         }
     }
 
     /// Create a standard system message receiver
     pub fn standard(name: impl Into<String>) -> Self {
-        Self::new(name, "StandardMessage", true)
+        Self::new(name, "StandardMessage")
     }
 }
 
