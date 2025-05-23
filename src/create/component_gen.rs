@@ -67,7 +67,10 @@ use super::{{
     runtime::{{{actor_name}Handle, {actor_name}Rx}},
     states::{states_name},
 }};
-use bloxide_tokio::{{channel::{{Receiver, Sender}}, components::*, TokioRuntime}};
+use bloxide_tokio::{{
+    messaging::{{Message, MessageSet, StandardPayload}},
+    TokioRuntime,
+    }};
 
 /// Defines the structure of the {actor_name} Blox component
 pub struct {actor_name}Components;
