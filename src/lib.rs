@@ -1,7 +1,13 @@
 pub mod blox;
 pub mod create;
-
+pub mod field;
+pub mod link;
+pub mod method;
 pub use blox::*;
+
+pub use field::Field;
+pub use link::Link;
+pub use method::Method;
 
 #[cfg(test)]
 use blox::actor::Actor;
@@ -11,7 +17,7 @@ const TEST_OUTPUT_DIR: &str = "tests/output";
 #[cfg(test)]
 pub fn create_test_actor() -> Actor {
     use blox::{
-        enums::{EnumDef, EnumVariant, Link},
+        enums::{EnumDef, EnumVariant},
         message_set::MessageSet,
         state::{State, StateEnum, States},
     };
