@@ -62,9 +62,10 @@ impl States {
     pub fn validate(&self) -> Result<(), String> {
         if let Some(state) = self.states.iter().find(|state| {
             // find state with a parent not in the list of states
-            state.parent.as_ref().map_or(false, |parent| {
-                !self.states.iter().any(|s| &s.ident == parent)
-            })
+            state
+                .parent
+                .as_ref()
+                .is_some_and(|parent| !self.states.iter().any(|s| &s.ident == parent))
         }) {
             return Err(format!(
                 "State '{}' has unknown parent '{}'",

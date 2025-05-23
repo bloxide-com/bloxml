@@ -39,7 +39,7 @@ pub fn create_test_actor() -> Actor {
                     "CustomValue1",
                     vec![Link::new("bloxide_core::messaging::Standard")],
                 ),
-                EnumVariant::new("CustomValue2", vec![]),
+                EnumVariant::new("CustomValue2", vec![Link::new("CustomArgs")]),
             ],
         ))),
     )
