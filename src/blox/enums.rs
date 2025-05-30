@@ -1,7 +1,7 @@
 use crate::Link;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 #[serde(rename = "enum")]
 pub struct EnumDef {
     pub ident: String,
@@ -21,7 +21,7 @@ impl EnumDef {
     }
 }
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 #[serde(rename = "enumvariant")]
 pub struct EnumVariant {
     pub ident: String,

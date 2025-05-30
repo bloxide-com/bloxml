@@ -1,23 +1,22 @@
 use serde::{Deserialize, Serialize};
 
+use crate::create::ToRust;
+
 /// Defines a message handle for sending messages
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 pub struct MessageHandle {
     /// Name of the handle
-    pub name: String,
+    pub ident: String,
     /// Type of message this handle sends
     pub message_type: String,
-    /// Additional metadata
-    pub metadata: Vec<String>,
 }
 
 impl MessageHandle {
     /// Create a new message handle
-    pub fn new(name: impl Into<String>, message_type: impl Into<String>) -> Self {
+    pub fn new(ident: impl Into<String>, message_type: impl Into<String>) -> Self {
         Self {
-            name: name.into(),
+            ident: ident.into(),
             message_type: message_type.into(),
-            metadata: Vec::new(),
         }
     }
 
@@ -27,30 +26,42 @@ impl MessageHandle {
     }
 }
 
+impl ToRust for MessageHandle {
+    fn to_rust(&self) -> String {
+        format!(
+            "pub {}: TokioMessageHandle<{}>",
+            self.ident, self.message_type
+        )
+    }
+}
+
 /// Defines a message receiver for receiving messages
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 pub struct MessageReceiver {
     /// Name of the receiver
-    pub name: String,
+    pub ident: String,
     /// Type of message this receiver accepts
     pub message_type: String,
-    /// Additional metadata
-    pub metadata: Vec<String>,
 }
 
 impl MessageReceiver {
     /// Create a new message receiver
-    pub fn new(name: impl Into<String>, message_type: impl Into<String>) -> Self {
+    pub fn new(ident: impl Into<String>, message_type: impl Into<String>) -> Self {
         Self {
-            name: name.into(),
+            ident: ident.into(),
             message_type: message_type.into(),
-            metadata: Vec::new(),
         }
     }
 
     /// Create a standard system message receiver
-    pub fn standard(name: impl Into<String>) -> Self {
-        Self::new(name, "StandardMessage")
+    pub fn standard(ident: impl Into<String>) -> Self {
+        Self::new(ident, "StandardMessage")
+    }
+}
+
+impl ToRust for MessageReceiver {
+    fn to_rust(&self) -> String {
+        format!("pub {}: Receiver<{}>", self.ident, self.message_type)
     }
 }
 
@@ -76,7 +87,23 @@ impl MessageHandles {
 
     /// Get a handle by name
     pub fn get_handle(&self, name: &str) -> Option<&MessageHandle> {
-        self.handles.iter().find(|h| h.name == name)
+        self.handles.iter().find(|h| h.ident == name)
+    }
+}
+
+impl ToRust for MessageHandles {
+    fn to_rust(&self) -> String {
+        let fields = self
+            .handles
+            .iter()
+            .map(ToRust::to_rust)
+            .collect::<Vec<_>>()
+            .join(",\n\t");
+        format!(
+            "pub struct MessageHandles {{
+    {fields}
+}}"
+        )
     }
 }
 
@@ -102,6 +129,22 @@ impl MessageReceivers {
 
     /// Get a receiver by name
     pub fn get_receiver(&self, name: &str) -> Option<&MessageReceiver> {
-        self.receivers.iter().find(|r| r.name == name)
+        self.receivers.iter().find(|r| r.ident == name)
+    }
+}
+
+impl ToRust for MessageReceivers {
+    fn to_rust(&self) -> String {
+        let fields = self
+            .receivers
+            .iter()
+            .map(ToRust::to_rust)
+            .collect::<Vec<_>>()
+            .join(",\n\t");
+        format!(
+            "pub struct MessageReceivers {{
+    {fields}
+}}"
+        )
     }
 }

@@ -3,9 +3,10 @@ use std::{error::Error, fs::OpenOptions, path::PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::{
+    ext_state::ExtState,
     message_handlers::{MessageHandle, MessageHandles, MessageReceiver, MessageReceivers},
     message_set::MessageSet,
-    state::{State, StateEnum, States},
+    state::States,
 };
 use serde_json;
 
@@ -20,6 +21,8 @@ pub struct Actor {
     pub message_handles: MessageHandles,
     #[serde(default)]
     pub message_receivers: MessageReceivers,
+    #[serde(default)]
+    pub ext_state: ExtState,
 }
 
 impl Actor {
@@ -28,13 +31,17 @@ impl Actor {
         P: Into<PathBuf>,
         S: Into<String>,
     {
+        let ident: String = ident.into();
+        let (handles, receivers) = Self::create_handles(&ident, &message_set);
+
         Self {
-            ident: ident.into(),
+            ident,
             path: path.into(),
             states,
             message_set,
-            message_handles: MessageHandles::new(),
-            message_receivers: MessageReceivers::new(),
+            message_handles: handles,
+            message_receivers: receivers,
+            ext_state: ExtState::default(),
         }
     }
 
@@ -55,87 +62,38 @@ impl Actor {
         serde_json::from_reader(file).map_err(From::from)
     }
 
-    pub fn with_states<P, S>(
-        ident: S,
-        path: P,
-        states: Vec<State>,
-        state_enum: StateEnum,
-        message_set: Option<MessageSet>,
-    ) -> Self
-    where
-        P: Into<PathBuf>,
-        S: Into<String>,
-    {
-        Self::new(ident, path, States::new(states, state_enum), message_set)
-    }
+    fn create_handles(
+        _ident: &str,
+        message_set: &Option<MessageSet>,
+    ) -> (MessageHandles, MessageReceivers) {
+        let mut handles = MessageHandles::new();
+        let mut receivers = MessageReceivers::new();
 
-    /// Add a default set of message handles and receivers for this actor
-    pub fn with_default_messages(mut self) -> Self {
-        // Get the message set name
-        let message_set_name = self
-            .message_set
-            .as_ref()
-            .map(|ms| ms.get().ident.clone())
-            .unwrap_or_else(|| format!("{}MessageSet", self.ident));
+        let Some(message_set) = message_set else {
+            return (handles, receivers);
+        };
 
-        let actor_name = self.ident.clone();
+        for variant in &message_set.get().variants {
+            let message_type = &variant
+                .args
+                .first()
+                .unwrap()
+                .as_ref()
+                .split("::")
+                .last()
+                .unwrap()
+                .to_string();
+            let handle_name = format!("{}_handle", message_type.to_lowercase());
+            handles.add_handle(MessageHandle::new(handle_name, message_type));
 
-        // Add standard message handle for core messaging
-        let standard_handle = MessageHandle::standard("standard_handle");
-        self.message_handles.add_handle(standard_handle);
-
-        // Add actor-specific message handle
-        let actor_handle = MessageHandle::new(
-            format!("{}_handle", actor_name.to_lowercase()),
-            message_set_name.clone(),
-        );
-        self.message_handles.add_handle(actor_handle);
-
-        // Add standard message receiver
-        let standard_rx = MessageReceiver::standard("std_rx");
-        self.message_receivers.add_receiver(standard_rx);
-
-        // Add actor-specific message receiver
-        let actor_rx = MessageReceiver::new(
-            format!("{}_rx", actor_name.to_lowercase()),
-            message_set_name.clone(),
-        );
-        self.message_receivers.add_receiver(actor_rx);
-
-        // Add handles and receivers for each message in the message set
-        if let Some(message_set) = &self.message_set {
-            for variant in &message_set.get().variants {
-                // Generate a handle for each message variant
-                let message_type = &variant.ident;
-                let handle_name = format!("{}_handle", message_type.to_lowercase());
-
-                // Skip if we already have a similar handle
-                if !self
-                    .message_handles
-                    .handles
-                    .iter()
-                    .any(|h| h.name == handle_name)
-                {
-                    let handle = MessageHandle::new(handle_name, message_type.to_string());
-                    self.message_handles.add_handle(handle);
-                }
-
-                // Generate a receiver for each message variant
-                let receiver_name = format!("{}_rx", message_type.to_lowercase());
-
-                // Skip if we already have a similar receiver
-                if !self
-                    .message_receivers
-                    .receivers
-                    .iter()
-                    .any(|r| r.name == receiver_name)
-                {
-                    let receiver = MessageReceiver::new(receiver_name, message_type.to_string());
-                    self.message_receivers.add_receiver(receiver);
-                }
-            }
+            let receiver_name = format!("{}_rx", message_type.to_lowercase());
+            receivers.add_receiver(MessageReceiver::new(receiver_name, message_type));
         }
 
-        self
+        (handles, receivers)
+    }
+
+    pub fn set_ext_state(&mut self, ext_state: ExtState) {
+        self.ext_state = ext_state;
     }
 }
