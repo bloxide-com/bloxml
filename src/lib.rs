@@ -18,6 +18,7 @@ const TEST_OUTPUT_DIR: &str = "tests/output";
 pub fn create_test_actor() -> Actor {
     use blox::{
         enums::{EnumDef, EnumVariant},
+        ext_state::tests::create_ext_state,
         message_set::MessageSet,
         state::{State, StateEnum, States},
     };
@@ -34,7 +35,7 @@ pub fn create_test_actor() -> Actor {
         state_enum,
     );
 
-    Actor::new(
+    let mut actor = Actor::new(
         "Actor",
         TEST_OUTPUT_DIR,
         states,
@@ -48,7 +49,11 @@ pub fn create_test_actor() -> Actor {
                 EnumVariant::new("CustomValue2", vec![Link::new("CustomArgs")]),
             ],
         ))),
-    )
+    );
+
+    actor.set_ext_state(create_ext_state());
+
+    actor
 }
 
 #[cfg(test)]
@@ -56,14 +61,12 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json;
 
-    use crate::blox::actor::Actor;
-    use crate::create_test_actor;
+    use crate::{blox::actor::Actor, create_test_actor};
     use std::fs;
 
     const TEST_FILE: &str = "tests/test_file.json";
 
-    #[test]
-    #[ignore]
+    #[expect(dead_code)]
     fn serialize_actor() {
         let test_actor = create_test_actor();
         let serialized_actor =

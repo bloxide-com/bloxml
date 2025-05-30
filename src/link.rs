@@ -32,3 +32,9 @@ impl From<String> for Link {
         Self(s)
     }
 }
+
+impl From<&str> for Link {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}

@@ -1,9 +1,10 @@
-use crate::{Field, Link};
+use crate::{Field, Link, create::ToRust};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
 pub struct Method {
     ident: String,
+    #[serde(default)]
     args: Vec<Field>,
     ret: Link,
     body: String,
@@ -21,5 +22,47 @@ impl Method {
             ret: ret.into(),
             body: body.into(),
         }
+    }
+
+    pub fn ident(&self) -> &str {
+        &self.ident
+    }
+
+    pub fn args(&self) -> &[Field] {
+        &self.args
+    }
+
+    pub fn ret(&self) -> &Link {
+        &self.ret
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+}
+
+impl ToRust for Method {
+    fn to_rust(&self) -> String {
+        let args = self
+            .args
+            .iter()
+            .map(|arg| format!("{}: {}", arg.ident(), arg.ty()))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let ret = if self.ret.as_ref().is_empty() {
+            "".to_string()
+        } else {
+            format!(" -> {}", self.ret)
+        };
+
+        format!(
+            r#"pub fn {ident}({args}){ret} {{
+        {body}
+    }}
+    "#,
+            ident = self.ident,
+            body = self.body,
+        )
     }
 }
