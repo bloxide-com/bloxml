@@ -79,7 +79,10 @@ pub enum {enum_name} {{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blox::enums::{EnumDef, EnumVariant, Link};
+    use crate::{
+        Link,
+        blox::enums::{EnumDef, EnumVariant},
+    };
 
     #[test]
     fn test_generate_message_set() {

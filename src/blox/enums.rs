@@ -1,8 +1,7 @@
-use std::fmt::{self, Display};
-
+use crate::Link;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 #[serde(rename = "enum")]
 pub struct EnumDef {
     pub ident: String,
@@ -22,7 +21,7 @@ impl EnumDef {
     }
 }
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 #[serde(rename = "enumvariant")]
 pub struct EnumVariant {
     pub ident: String,
@@ -41,34 +40,9 @@ impl EnumVariant {
     }
 }
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
-#[serde(rename = "link")]
-pub struct Link(String);
-
-impl Link {
-    pub fn new<S>(link: S) -> Self
-    where
-        S: Into<String>,
-    {
-        Self(link.into())
-    }
-}
-
-impl Display for Link {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl AsRef<str> for Link {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::enums::Link;
+    use crate::Link;
 
     use super::*;
     use pretty_assertions::assert_eq;

@@ -6,7 +6,10 @@ use std::{
     path::Path,
 };
 
-use super::{generate_component, generate_message_set, generate_state_enum_impl, state_gen};
+use super::{
+    ext_state_gen, generate_component, generate_message_set, generate_state_enum_impl,
+    runtime_gen::generate_runtime, state_gen,
+};
 
 const MSG_MOD: &str = "messaging.rs";
 const EXT_STATE_MOD: &str = "ext_state.rs";
@@ -114,53 +117,21 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
 
     // Generate placeholder files for ext_state.rs and runtime.rs
     let placeholder_ext_state = format!(
-        r#"//! # {} Extended State
+        r#"//! # {ident} Extended State
 //! 
-//! Extended state for the {} component.
+//! Extended state for the {ident} component.
 //! This file defines the extended state data structure that persists across state transitions.
 
-/// Extended state for the {} component
-pub struct {}ExtState {{
-    // Add your state fields here
-}}
+/// Extended state for the {ident} component
+{ext_state}
 "#,
-        actor.ident, actor.ident, actor.ident, actor.ident
+        ident = actor.ident,
+        ext_state = ext_state_gen::generate_ext_state(&actor.ext_state),
     );
     fs::write(mod_path.join(EXT_STATE_MOD), placeholder_ext_state)?;
 
-    let actor_name = actor.ident.clone();
-    let placeholder_runtime = format!(
-        r#"//! # {actor_name} Runtime
-//!
-//! Runtime types for the {actor_name} component.
-//! This file defines the runtime handles, channels, and other types used for communication.
-
-use bloxide_tokio::{{channel::{{mpsc, Sender}}, runtime::RuntimeHandle}};
-
-/// Handle for sending messages to the {actor_name} actor
-#[derive(Clone)]
-pub struct {actor_name}Handle {{
-    // Add fields here
-}}
-
-/// Receiver type for {actor_name} messages
-pub struct {actor_name}Rx {{
-    // Add fields here
-}}
-
-/// Handle for sending messages to the execute actor
-#[derive(Clone)]
-pub struct ExecHandle {{
-    // Add fields here
-}}
-
-/// Receiver type for execute messages
-pub struct ExecRx {{
-    // Add fields here
-}}
-"#,
-    );
-    fs::write(mod_path.join(RUNTIME_MOD), placeholder_runtime)?;
+    let runtime_content = generate_runtime(actor)?;
+    fs::write(mod_path.join(RUNTIME_MOD), runtime_content)?;
 
     create_root_mod_rs(&mod_path, &MODS)
 }

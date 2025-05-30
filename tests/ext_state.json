@@ -1,0 +1,33 @@
+{
+  "ident": "ActorExtState",
+  "fields": [
+    {
+      "ident": "field1",
+      "ty": "String"
+    },
+    {
+      "ident": "field2",
+      "ty": "i32"
+    }
+  ],
+  "methods": [
+    {
+      "ident": "get_custom_value",
+      "args": [],
+      "ret": "String",
+      "body": "self.custom_value"
+    },
+    {
+      "ident": "get_custom_value2",
+      "args": [],
+      "ret": "i32",
+      "body": "self.custom_value2"
+    },
+    {
+      "ident": "hello_world",
+      "args": [],
+      "ret": "",
+      "body": "println!(\"Hello, world!\")"
+    }
+  ]
+}

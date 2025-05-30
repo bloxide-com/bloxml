@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::enums::EnumDef;
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 pub struct MessageSet(EnumDef);
 
 impl MessageSet {
