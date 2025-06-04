@@ -60,7 +60,7 @@ fn create_state_files(path: &Path, states: &States) -> Result<(), Box<dyn Error>
         .iter()
         .zip(state_files)
         .try_for_each(|(state, mut file)| {
-            let impl_content = state_gen::generate_inner_states(state)?;
+            let impl_content = state_gen::generate_inner_states(state, states)?;
             file.write_all(impl_content.as_bytes())
                 .map_err(|e| format!("Error writing state impl: {e}").into())
         })

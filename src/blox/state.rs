@@ -16,7 +16,7 @@ impl StateEnum {
     }
 }
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 #[serde(rename = "state")]
 pub struct State {
     pub ident: String,
