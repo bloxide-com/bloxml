@@ -2,10 +2,17 @@ use crate::blox::state::{State, States};
 use std::error::Error;
 
 /// Generate a state implementation for a specific State in the States collection
-pub fn generate_inner_states(state: &State) -> Result<String, Box<dyn Error>> {
-    let parent_state = state.parent.clone().unwrap_or_else(|| "NONE".to_string());
-
+pub fn generate_inner_states(
+    state: &State,
+    parent_enum: &States,
+) -> Result<String, Box<dyn Error>> {
     let state_name = &state.ident;
+
+    let parent_relation = if let Some(parent) = &state.parent {
+        format!("{}::{parent}({parent})", parent_enum.state_enum.get().ident,)
+    } else {
+        format!("{}::Uninit(Uninit)", parent_enum.state_enum.get().ident)
+    };
 
     let impl_content = format!(
         r#"use bloxide_core::{{components::Components, message::MessageSet, state_machine::{{StateMachine, State, Transition}}}};
@@ -37,12 +44,6 @@ impl State<Components> for {state_name} {{
     }}
 }}
 "#,
-        state_name = state_name,
-        parent_relation = if parent_state == "NONE" {
-            "Components::States::from(self.clone()) // No parent state".to_string()
-        } else {
-            format!("Components::States::from({}::new())", parent_state)
-        }
     );
     Ok(impl_content)
 }
@@ -53,52 +54,42 @@ pub fn generate_state_enum_impl(states: &States) -> Result<String, Box<dyn Error
 
     let imports = states.states.iter().fold(String::new(), |acc, state| {
         format!(
-            "{}use {}::{};\n",
-            acc,
-            state.ident.to_lowercase(),
-            state.ident
+            "{acc}use {ident_lowercase}::{ident};\n",
+            ident_lowercase = state.ident.to_lowercase(),
+            ident = state.ident
         )
     });
 
     let variants = states.states.iter().fold(String::new(), |acc, state| {
         format!(
-            "{}    /// {state_name} state\n    {state_name}({state_name}),\n",
-            acc,
+            "{acc}    /// {state_name} state\n    {state_name}({state_name}),\n",
             state_name = state.ident
         )
     });
 
     let handle_message_arms = states.states.iter().fold(String::new(), |acc, state| {
-        format!("{}            {enum_name}::{state_name}(state) => state.handle_message(state_machine, message),\n", 
-            acc,
-            enum_name = enum_name,
+        format!("{acc}            {enum_name}::{state_name}(state) => state.handle_message(state_machine, message),\n", 
             state_name = state.ident
         )
     });
 
     let on_entry_arms = states.states.iter().fold(String::new(), |acc, state| {
         format!(
-            "{}            {enum_name}::{state_name}(state) => state.on_entry(state_machine),\n",
-            acc,
-            enum_name = enum_name,
+            "{acc}            {enum_name}::{state_name}(state) => state.on_entry(state_machine),\n",
             state_name = state.ident
         )
     });
 
     let on_exit_arms = states.states.iter().fold(String::new(), |acc, state| {
         format!(
-            "{}            {enum_name}::{state_name}(state) => state.on_exit(state_machine),\n",
-            acc,
-            enum_name = enum_name,
+            "{acc}            {enum_name}::{state_name}(state) => state.on_exit(state_machine),\n",
             state_name = state.ident
         )
     });
 
     let parent_arms = states.states.iter().fold(String::new(), |acc, state| {
         format!(
-            "{}            {enum_name}::{state_name}(state) => state.parent(),\n",
-            acc,
-            enum_name = enum_name,
+            "{acc}            {enum_name}::{state_name}(state) => state.parent(),\n",
             state_name = state.ident
         )
     });
@@ -148,13 +139,6 @@ impl State<Components> for {enum_name} {{
     }}
 }}
 "#,
-        enum_name = enum_name,
-        imports = imports,
-        variants = variants,
-        handle_message_arms = handle_message_arms,
-        on_entry_arms = on_entry_arms,
-        on_exit_arms = on_exit_arms,
-        parent_arms = parent_arms,
     );
 
     Ok(impl_content)
@@ -172,7 +156,12 @@ mod tests {
     fn test_generate_state_impls() {
         let state = State::from("Create");
 
-        let impl_content = generate_inner_states(&state).expect("Failed to generate state impls");
+        let states = States::new(
+            vec![state.clone()],
+            StateEnum::new(EnumDef::new("ActorStates", vec![])),
+        );
+        let impl_content =
+            generate_inner_states(&state, &states).expect("Failed to generate state impls");
         let ident = state.ident;
         eprintln!("State impl for {ident}: {impl_content}");
 
