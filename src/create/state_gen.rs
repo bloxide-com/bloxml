@@ -1,14 +1,9 @@
-use crate::{
-    actor::Actor,
-    blox::state::{State, States},
-};
+use crate::{actor::Actor, blox::state::State};
 use std::error::Error;
 
 /// Generate a state implementation for a specific State in the States collection
-pub fn generate_inner_states(
-    state: &State,
-    parent_enum: &States,
-) -> Result<String, Box<dyn Error>> {
+pub fn generate_inner_states(actor: &Actor, state: &State) -> Result<String, Box<dyn Error>> {
+    let parent_enum = &actor.component.states;
     let state_name = &state.ident;
 
     let parent_relation = if let Some(parent) = &state.parent {
@@ -54,6 +49,7 @@ impl State<Components> for {state_name} {{
 /// Generate a unified StateEnum implementation that contains all states
 pub fn generate_state_enum_impl(actor: &Actor) -> Result<String, Box<dyn Error>> {
     let states = &actor.component.states;
+    let component_ident = &actor.component.ident;
     let enum_name = states.state_enum.get().ident.clone();
 
     let imports = states.states.iter().fold(String::new(), |acc, state| {
@@ -109,27 +105,27 @@ use log::trace;
 pub enum {enum_name} {{
 {variants}}}
 
-impl State<Components> for {enum_name} {{
+impl State<{component_ident}> for {enum_name} {{
     /// Handles incoming messages and returns a transition to a new state if needed
     fn handle_message(
         &self,
-        state_machine: &mut StateMachine<Components>,
+        state_machine: &mut StateMachine<{component_ident}>,
         message: {message_set},
-    ) -> Option<Transition<Components::States, {message_set}>> {{
+    ) -> Option<Transition<<{component_ident} as Components>::States, {message_set}>> {{
         match self {{
 {handle_message_arms}
         }}
     }}
 
     /// Executes actions when entering a state
-    fn on_entry(&self, state_machine: &mut StateMachine<Components>) {{
+    fn on_entry(&self, state_machine: &mut StateMachine<{component_ident}>) {{
         match self {{
 {on_entry_arms}
         }}
     }}
 
     /// Executes actions when exiting a state
-    fn on_exit(&self, state_machine: &mut StateMachine<Components>) {{
+    fn on_exit(&self, state_machine: &mut StateMachine<{component_ident}>) {{
         match self {{
 {on_exit_arms}
         }}
@@ -162,14 +158,16 @@ mod tests {
 
     #[test]
     fn test_generate_state_impls() {
+        let mut actor = create_test_actor();
         let state = State::from("Create");
 
         let states = States::new(
             vec![state.clone()],
             StateEnum::new(EnumDef::new("ActorStates", vec![])),
         );
+        actor.component.states = states;
         let impl_content =
-            generate_inner_states(&state, &states).expect("Failed to generate state impls");
+            generate_inner_states(&actor, &state).expect("Failed to generate state impls");
         let ident = state.ident;
         eprintln!("State impl for {ident}: {impl_content}");
 
@@ -180,6 +178,7 @@ mod tests {
     #[test]
     fn test_generate_state_enum_impl() {
         let mut actor = create_test_actor();
+        let component_ident = &actor.component.ident;
         let state_enum = StateEnum::new(EnumDef::new("ActorStates", vec![]));
 
         let states = States::new(
@@ -198,7 +197,7 @@ mod tests {
         eprintln!("State enum impl: {}", impl_content);
 
         assert!(impl_content.contains("pub enum ActorStates"));
-        assert!(impl_content.contains("impl State<Components> for ActorStates"));
+        assert!(impl_content.contains(&format!("impl State<{component_ident}> for ActorStates")));
 
         for state in &actor.component.states.states {
             assert!(impl_content.contains(&format!("    {}({})", state.ident, state.ident)));
