@@ -1,4 +1,4 @@
-use crate::blox::{actor::Actor, state::States};
+use crate::blox::actor::Actor;
 use std::{
     error::Error,
     fs::{self, File},
@@ -25,7 +25,7 @@ fn create_module_dir(path: &Path) -> Result<(), String> {
 
 fn create_states_module(path: &Path, actor: &Actor) -> Result<(), Box<dyn Error>> {
     create_module_dir(path)?;
-    create_state_files(path, &actor.component.states)?;
+    create_state_files(path, actor)?;
 
     let states_mod_rs = actor
         .component
@@ -48,7 +48,8 @@ fn create_states_module(path: &Path, actor: &Actor) -> Result<(), Box<dyn Error>
         .map_err(|e| format!("Error writing states/mod.rs: {e}").into())
 }
 
-fn create_state_files(path: &Path, states: &States) -> Result<(), Box<dyn Error>> {
+fn create_state_files(path: &Path, actor: &Actor) -> Result<(), Box<dyn Error>> {
+    let states = &actor.component.states;
     let state_files = states
         .states
         .iter()
@@ -62,7 +63,7 @@ fn create_state_files(path: &Path, states: &States) -> Result<(), Box<dyn Error>
         .iter()
         .zip(state_files)
         .try_for_each(|(state, mut file)| {
-            let impl_content = state_gen::generate_inner_states(state, states)?;
+            let impl_content = state_gen::generate_inner_states(actor, state)?;
             file.write_all(impl_content.as_bytes())
                 .map_err(|e| format!("Error writing state impl: {e}").into())
         })
@@ -114,7 +115,7 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
     }
 
     // Generate component.rs
-    let component_content = generate_component(actor)?;
+    let component_content = generate_component(actor);
     fs::write(mod_path.join(COMPONENT_MOD), component_content)?;
 
     // Generate placeholder files for ext_state.rs and runtime.rs

@@ -29,23 +29,30 @@ pub(crate) mod tests {
     const TEST_FILE: &str = "tests/test_file.json";
 
     pub fn create_test_actor() -> Actor {
+        let mut actor = Actor::new(
+            "Actor",
+            TEST_OUTPUT_DIR,
+            create_test_states(),
+            Some(create_test_message_set()),
+        );
+        actor.component = create_test_component();
+        actor
+    }
+
+    pub fn create_test_component() -> Component {
         let message_set = Some(create_test_message_set());
         let states = create_test_states();
         let handles = create_test_handles();
         let receivers = create_test_receivers();
-
         let ext_state = create_test_ext_state();
-        let component = Component::new(
+        Component::new(
+            "ActorComponents".to_string(),
             handles,
             receivers,
             states.clone(),
             message_set.clone(),
             ext_state,
-        );
-
-        let mut actor = Actor::new("Actor", TEST_OUTPUT_DIR, states, message_set);
-        actor.component = component;
-        actor
+        )
     }
 
     pub fn create_test_ext_state() -> ExtState {

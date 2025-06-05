@@ -27,8 +27,14 @@ impl Actor {
     {
         let ident: String = ident.into();
         let (handles, receivers) = Self::create_handles(&ident, &message_set);
-        let component =
-            Component::new(handles, receivers, states, message_set, ExtState::default());
+        let component = Component::new(
+            format!("{ident}Components"),
+            handles,
+            receivers,
+            states,
+            message_set,
+            ExtState::default(),
+        );
 
         Self {
             ident,
@@ -90,6 +96,6 @@ impl Actor {
             .message_set
             .as_ref()
             .map(|ms| ms.get().ident.clone())
-            .unwrap_or_else(|| format!("{}_MessageSet", self.ident))
+            .unwrap_or_else(|| format!("{}MessageSet", self.ident))
     }
 }
