@@ -1,62 +1,10 @@
 use crate::blox::actor::Actor;
-use std::error::Error;
 
 use super::ToRust;
 
 /// Generates the component definition file for an actor
-pub fn generate_component(actor: &Actor) -> Result<String, Box<dyn Error>> {
-    let actor_name = &actor.ident;
-    let states_name = actor.component.states.state_enum.get().ident.clone();
-    let message_set_name = actor
-        .component
-        .message_set
-        .as_ref()
-        .map(|ms| ms.get().ident.clone())
-        .unwrap_or_else(|| format!("{actor_name}MessageSet"));
-
-    let handles = actor.component.message_handles.to_rust();
-    let receivers = actor.component.message_receivers.to_rust();
-
-    let component_content = format!(
-        r#"//! # {actor_name} Components
-//!
-//! This module defines the component structure for the {actor_name} Blox.
-//! It specifies the states, message types, extended state, and communication
-//! channels that make up the {actor_name} component.
-
-use crate::blox::{{StandardMessageHandle, StandardMessageRx}};
-
-use super::{{
-    ext_state::{actor_name}ExtState,
-    messaging::{message_set_name},
-    runtime::{{{actor_name}Handle, {actor_name}Rx}},
-    states::{states_name},
-}};
-use bloxide_tokio::{{
-    messaging::{{Message, MessageSet, StandardPayload}},
-    TokioRuntime,
-    }};
-
-/// Defines the structure of the {actor_name} Blox component
-pub struct {actor_name}Components;
-
-impl Components for {actor_name}Components {{
-    type States = {states_name};
-    type MessageSet = {message_set_name};
-    type ExtendedState = {actor_name}ExtState;
-    type Receivers = {actor_name}Receivers;
-    type Handles = {actor_name}Handles;
-}}
-
-/// Receiver channels for the {actor_name} component
-{receivers}
-
-/// Message handles for sending messages from the {actor_name} component
-{handles}
-"#,
-    );
-
-    Ok(component_content)
+pub fn generate_component(actor: &Actor) -> String {
+    actor.component.to_rust()
 }
 
 #[cfg(test)]
@@ -67,8 +15,7 @@ mod tests {
     #[test]
     fn test_generate_component() {
         let test_actor = create_test_actor();
-        let component_content =
-            generate_component(&test_actor).expect("Failed to generate component content");
+        let component_content = generate_component(&test_actor);
 
         assert!(component_content.contains(&format!("pub struct {}", test_actor.ident)));
         assert!(component_content.contains(&format!(

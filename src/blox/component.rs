@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
 pub struct Component {
+    pub ident: String,
     pub states: States,
     pub message_set: Option<MessageSet>,
     #[serde(default)]
@@ -20,7 +21,8 @@ pub struct Component {
 }
 
 impl Component {
-    pub fn new(
+    pub fn new<S: Into<String>>(
+        ident: S,
         message_handles: MessageHandles,
         message_receivers: MessageReceivers,
         states: States,
@@ -28,6 +30,7 @@ impl Component {
         ext_state: ExtState,
     ) -> Self {
         Self {
+            ident: ident.into(),
             message_handles,
             message_receivers,
             states,
@@ -39,15 +42,59 @@ impl Component {
 
 impl ToRust for Component {
     fn to_rust(&self) -> String {
+        let actor_name = &self.ident.split("Components").next().unwrap();
+        let component_name = &self.ident;
+        let ext_state_name = &self.ext_state.ident();
+        let states_name = &self.states.state_enum.get().ident;
+        let message_set_name = self
+            .message_set
+            .as_ref()
+            .map(|ms| ms.get().ident.clone())
+            .unwrap_or_else(|| format!("{actor_name}MessageSet"));
+
+        let handles_ident = format!("{actor_name}Handles");
+        let receivers_ident = format!("{actor_name}Receivers");
+
         let handles = self.message_handles.to_rust();
         let receivers = self.message_receivers.to_rust();
 
         format!(
-            r#"/// Message handles for sending messages
-{handles}
+            r#"//! # {actor_name} Components
+//!
+//! This module defines the component structure for the {actor_name} Blox.
+//! It specifies the states, message types, extended state, and communication
+//! channels that make up the {actor_name} component.
 
-/// Message receivers for receiving messages
-{receivers}"#
+use crate::blox::{{StandardMessageHandle, StandardMessageRx}};
+
+use super::{{
+    ext_state::{actor_name}ExtState,
+    messaging::{message_set_name},
+    runtime::{{{actor_name}Handle, {actor_name}Rx}},
+    states::{states_name},
+}};
+use bloxide_tokio::{{
+    messaging::{{Message, MessageSet, StandardPayload}},
+    TokioRuntime,
+    }};
+
+/// Defines the structure of the {actor_name} Blox component
+pub struct {component_name};
+
+impl Components for {component_name} {{
+    type States = {states_name};
+    type MessageSet = {message_set_name};
+    type ExtendedState = {ext_state_name};
+    type Receivers = {receivers_ident};
+    type Handles = {handles_ident};
+}}
+
+/// Receiver channels for the {actor_name} component
+{receivers}
+
+/// Message handles for sending messages from the {actor_name} component
+{handles}
+"#
         )
     }
 }
@@ -55,7 +102,10 @@ impl ToRust for Component {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{blox::message_handlers::{MessageHandle, MessageReceiver}, tests::create_test_states};
+    use crate::{
+        blox::message_handlers::{MessageHandle, MessageReceiver},
+        tests::create_test_states,
+    };
 
     #[test]
     fn test_to_rust() {
@@ -66,6 +116,7 @@ mod tests {
         receivers.add_receiver(MessageReceiver::new("test_rx", "TestMessage"));
 
         let component = Component::new(
+            "ActorComponents".to_string(),
             handles,
             receivers,
             create_test_states(),
