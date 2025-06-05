@@ -2,6 +2,7 @@
   "ident": "Actor",
   "path": "tests/output",
   "component": {
+    "ident": "ActorComponents",
     "message_handles": {
       "handles": [
         {
