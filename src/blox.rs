@@ -1,4 +1,5 @@
 pub mod actor;
+pub mod component;
 pub mod enums;
 pub mod ext_state;
 pub mod message_handlers;

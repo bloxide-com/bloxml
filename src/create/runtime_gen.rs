@@ -3,6 +3,7 @@ use std::error::Error;
 
 pub fn generate_runtime(actor: &Actor) -> Result<String, Box<dyn Error>> {
     let message_set_name = actor
+        .component
         .message_set
         .as_ref()
         .map(|ms| ms.get().ident.clone())
@@ -10,11 +11,21 @@ pub fn generate_runtime(actor: &Actor) -> Result<String, Box<dyn Error>> {
 
     let mut select_arms = String::new();
     let iter = actor
+        .component
         .message_receivers
         .receivers
         .clone()
         .into_iter()
-        .zip(actor.message_set.clone().unwrap().get().variants.clone());
+        .zip(
+            actor
+                .component
+                .message_set
+                .clone()
+                .unwrap()
+                .get()
+                .variants
+                .clone(),
+        );
     for (receiver, variant) in iter {
         let variant_name = variant
             .args
@@ -31,10 +42,12 @@ pub fn generate_runtime(actor: &Actor) -> Result<String, Box<dyn Error>> {
                     }}
 "#,
             ident = receiver.ident,
+            message_set_name = message_set_name,
+            variant_name = variant_name,
         ));
     }
     let actor_name = actor.ident.clone();
-    let states = &actor.states;
+    let states = &actor.component.states;
     let first_state = &states.states[0];
     let second_state = states.states.get(1).unwrap_or(&states.states[0]);
     let state_enum_name = &states.state_enum.get().ident;

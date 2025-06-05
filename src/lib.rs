@@ -10,37 +10,59 @@ pub use link::Link;
 pub use method::Method;
 
 #[cfg(test)]
-use blox::actor::Actor;
-#[cfg(test)]
-const TEST_OUTPUT_DIR: &str = "tests/output";
-
-#[cfg(test)]
-pub fn create_test_actor() -> Actor {
-    use blox::{
+pub(crate) mod tests {
+    use crate::{
+        Field, Link, Method,
+        actor::Actor,
+        component::Component,
         enums::{EnumDef, EnumVariant},
-        ext_state::tests::create_ext_state,
+        ext_state::ExtState,
+        message_handlers::{MessageHandle, MessageHandles, MessageReceiver, MessageReceivers},
         message_set::MessageSet,
         state::{State, StateEnum, States},
     };
+    use pretty_assertions::assert_eq;
+    use serde_json;
+    use std::fs;
 
-    // Create explicit state enum
-    let state_enum = StateEnum::new(EnumDef::new("ActorStates", vec![]));
+    const TEST_OUTPUT_DIR: &str = "tests/output";
+    const TEST_FILE: &str = "tests/test_file.json";
 
-    // Create states
-    let states = States::new(
-        vec![
-            State::from("Create"),
-            State::new("Update", Some("Create".to_string()), None),
-        ],
-        state_enum,
-    );
+    pub fn create_test_actor() -> Actor {
+        let message_set = Some(create_test_message_set());
+        let states = create_test_states();
+        let handles = create_test_handles();
+        let receivers = create_test_receivers();
 
-    let mut actor = Actor::new(
-        "Actor",
-        TEST_OUTPUT_DIR,
-        states,
-        Some(MessageSet::new(EnumDef::new(
-            "ActorMessage",
+        let ext_state = create_test_ext_state();
+        let component = Component::new(
+            handles,
+            receivers,
+            states.clone(),
+            message_set.clone(),
+            ext_state,
+        );
+
+        let mut actor = Actor::new("Actor", TEST_OUTPUT_DIR, states, message_set);
+        actor.component = component;
+        actor
+    }
+
+    pub fn create_test_ext_state() -> ExtState {
+        ExtState::new(
+            "ActorExtState",
+            vec![Field::new("field1", "String"), Field::new("field2", "i32")],
+            vec![
+                Method::new("get_custom_value", &vec![], "String", "self.custom_value"),
+                Method::new("get_custom_value2", &vec![], "i32", "self.custom_value2"),
+                Method::new("hello_world", &vec![], "", r#"println!("Hello, world!")"#),
+            ],
+        )
+    }
+
+    pub fn create_test_message_set() -> MessageSet {
+        MessageSet::new(EnumDef::new(
+            "ActorMessageSet",
             vec![
                 EnumVariant::new(
                     "CustomValue1",
@@ -48,23 +70,32 @@ pub fn create_test_actor() -> Actor {
                 ),
                 EnumVariant::new("CustomValue2", vec![Link::new("CustomArgs")]),
             ],
-        ))),
-    );
+        ))
+    }
 
-    actor.set_ext_state(create_ext_state());
+    pub fn create_test_states() -> States {
+        States::new(
+            vec![
+                State::from("Create"),
+                State::new("Update", Some("Create".to_string()), None),
+            ],
+            StateEnum::new(EnumDef::new("ActorStates", vec![])),
+        )
+    }
 
-    actor
-}
+    pub fn create_test_handles() -> MessageHandles {
+        let mut handles = MessageHandles::new();
+        handles.add_handle(MessageHandle::new("standard_handle", "Standard"));
+        handles.add_handle(MessageHandle::new("customargs_handle", "CustomArgs"));
+        handles
+    }
 
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_eq;
-    use serde_json;
-
-    use crate::{blox::actor::Actor, create_test_actor};
-    use std::fs;
-
-    const TEST_FILE: &str = "tests/test_file.json";
+    pub fn create_test_receivers() -> MessageReceivers {
+        let mut receivers = MessageReceivers::new();
+        receivers.add_receiver(MessageReceiver::new("standard_rx", "Standard"));
+        receivers.add_receiver(MessageReceiver::new("customargs_rx", "CustomArgs"));
+        receivers
+    }
 
     #[expect(dead_code)]
     fn serialize_actor() {

@@ -6,15 +6,16 @@ use super::ToRust;
 /// Generates the component definition file for an actor
 pub fn generate_component(actor: &Actor) -> Result<String, Box<dyn Error>> {
     let actor_name = &actor.ident;
-    let states_name = actor.states.state_enum.get().ident.clone();
+    let states_name = actor.component.states.state_enum.get().ident.clone();
     let message_set_name = actor
+        .component
         .message_set
         .as_ref()
         .map(|ms| ms.get().ident.clone())
         .unwrap_or_else(|| format!("{actor_name}MessageSet"));
 
-    let handles = actor.message_handles.to_rust();
-    let receivers = actor.message_receivers.to_rust();
+    let handles = actor.component.message_handles.to_rust();
+    let receivers = actor.component.message_receivers.to_rust();
 
     let component_content = format!(
         r#"//! # {actor_name} Components
@@ -61,7 +62,7 @@ impl Components for {actor_name}Components {{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::create_test_actor;
+    use crate::tests::create_test_actor;
 
     #[test]
     fn test_generate_component() {
@@ -76,7 +77,7 @@ mod tests {
         )));
         assert!(component_content.contains(&format!(
             "type States = {}",
-            test_actor.states.state_enum.get().ident
+            test_actor.component.states.state_enum.get().ident
         )));
 
         // Test that standard handle and receiver fields are included
@@ -86,7 +87,7 @@ mod tests {
         // assert!(component_content.contains("pub std_rx: StandardMessageRx<TokioRuntime>"));
 
         // Test that message-specific handles and receivers are included (if any)
-        if let Some(message_set) = &test_actor.message_set {
+        if let Some(message_set) = &test_actor.component.message_set {
             for variant in &message_set.get().variants {
                 let message_name = variant
                     .args
