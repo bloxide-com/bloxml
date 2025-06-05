@@ -44,7 +44,7 @@ fn create_states_module(path: &Path, actor: &Actor) -> Result<(), Box<dyn Error>
         .map_err(|e| format!("Error writing states/mod.rs: {e}"))?;
 
     mod_rs
-        .write_all(generate_state_enum_impl(&actor)?.as_bytes())
+        .write_all(generate_state_enum_impl(actor)?.as_bytes())
         .map_err(|e| format!("Error writing states/mod.rs: {e}").into())
 }
 
@@ -106,7 +106,7 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
     create_module_files(&mod_path, &MODS)?;
 
     let states_path = actor.create_states_path();
-    create_states_module(&states_path, &actor)?;
+    create_states_module(&states_path, actor)?;
 
     if let Some(message_set) = &actor.component.message_set {
         let message_module_content = generate_message_set(message_set)?;
