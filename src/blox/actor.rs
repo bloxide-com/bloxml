@@ -3,6 +3,7 @@ use std::{error::Error, fs::OpenOptions, path::PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::{
+    component::Component,
     ext_state::ExtState,
     message_handlers::{MessageHandle, MessageHandles, MessageReceiver, MessageReceivers},
     message_set::MessageSet,
@@ -15,14 +16,7 @@ use serde_json;
 pub struct Actor {
     pub ident: String,
     pub path: PathBuf,
-    pub states: States,
-    pub message_set: Option<MessageSet>,
-    #[serde(default)]
-    pub message_handles: MessageHandles,
-    #[serde(default)]
-    pub message_receivers: MessageReceivers,
-    #[serde(default)]
-    pub ext_state: ExtState,
+    pub component: Component,
 }
 
 impl Actor {
@@ -33,15 +27,13 @@ impl Actor {
     {
         let ident: String = ident.into();
         let (handles, receivers) = Self::create_handles(&ident, &message_set);
+        let component =
+            Component::new(handles, receivers, states, message_set, ExtState::default());
 
         Self {
             ident,
             path: path.into(),
-            states,
-            message_set,
-            message_handles: handles,
-            message_receivers: receivers,
-            ext_state: ExtState::default(),
+            component,
         }
     }
 
@@ -93,7 +85,11 @@ impl Actor {
         (handles, receivers)
     }
 
-    pub fn set_ext_state(&mut self, ext_state: ExtState) {
-        self.ext_state = ext_state;
+    pub fn message_set_ident(&self) -> String {
+        self.component
+            .message_set
+            .as_ref()
+            .map(|ms| ms.get().ident.clone())
+            .unwrap_or_else(|| format!("{}_MessageSet", self.ident))
     }
 }

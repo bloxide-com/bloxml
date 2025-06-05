@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::enums::{EnumDef, EnumVariant};
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 #[serde(rename = "state_enum")]
 pub struct StateEnum(pub EnumDef);
 
@@ -44,7 +44,7 @@ impl From<&str> for State {
     }
 }
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 pub struct States {
     pub state_enum: StateEnum,
     pub states: Vec<State>,

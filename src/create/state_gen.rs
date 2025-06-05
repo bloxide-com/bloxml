@@ -1,4 +1,7 @@
-use crate::blox::state::{State, States};
+use crate::{
+    actor::Actor,
+    blox::state::{State, States},
+};
 use std::error::Error;
 
 /// Generate a state implementation for a specific State in the States collection
@@ -49,7 +52,8 @@ impl State<Components> for {state_name} {{
 }
 
 /// Generate a unified StateEnum implementation that contains all states
-pub fn generate_state_enum_impl(states: &States) -> Result<String, Box<dyn Error>> {
+pub fn generate_state_enum_impl(actor: &Actor) -> Result<String, Box<dyn Error>> {
+    let states = &actor.component.states;
     let enum_name = states.state_enum.get().ident.clone();
 
     let imports = states.states.iter().fold(String::new(), |acc, state| {
@@ -110,8 +114,8 @@ impl State<Components> for {enum_name} {{
     fn handle_message(
         &self,
         state_machine: &mut StateMachine<Components>,
-        message: Components::MessageSet,
-    ) -> Option<Transition<Components::States, Components::MessageSet>> {{
+        message: {message_set},
+    ) -> Option<Transition<Components::States, {message_set}>> {{
         match self {{
 {handle_message_arms}
         }}
@@ -132,13 +136,14 @@ impl State<Components> for {enum_name} {{
     }}
 
     /// Returns the parent state in the state machine hierarchy
-    fn parent(&self) -> Components::States {{
+    fn parent(&self) -> {enum_name} {{
         match self {{
 {parent_arms}
         }}
     }}
 }}
 "#,
+        message_set = actor.message_set_ident(),
     );
 
     Ok(impl_content)
@@ -147,9 +152,12 @@ impl State<Components> for {enum_name} {{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blox::{
-        enums::EnumDef,
-        state::{State, StateEnum, States},
+    use crate::{
+        blox::{
+            enums::EnumDef,
+            state::{State, StateEnum, States},
+        },
+        tests::create_test_actor,
     };
 
     #[test]
@@ -171,6 +179,7 @@ mod tests {
 
     #[test]
     fn test_generate_state_enum_impl() {
+        let mut actor = create_test_actor();
         let state_enum = StateEnum::new(EnumDef::new("ActorStates", vec![]));
 
         let states = States::new(
@@ -182,14 +191,16 @@ mod tests {
             state_enum,
         );
 
+        actor.component.states = states;
+
         let impl_content =
-            generate_state_enum_impl(&states).expect("Failed to generate state enum impl");
+            generate_state_enum_impl(&actor).expect("Failed to generate state enum impl");
         eprintln!("State enum impl: {}", impl_content);
 
         assert!(impl_content.contains("pub enum ActorStates"));
         assert!(impl_content.contains("impl State<Components> for ActorStates"));
 
-        for state in &states.states {
+        for state in &actor.component.states.states {
             assert!(impl_content.contains(&format!("    {}({})", state.ident, state.ident)));
         }
 

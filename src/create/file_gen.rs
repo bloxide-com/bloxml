@@ -23,11 +23,13 @@ fn create_module_dir(path: &Path) -> Result<(), String> {
         .map_err(|e| format!("Error creating directory {}: {e}", path.display()))
 }
 
-fn create_states_module(path: &Path, states: &States) -> Result<(), Box<dyn Error>> {
+fn create_states_module(path: &Path, actor: &Actor) -> Result<(), Box<dyn Error>> {
     create_module_dir(path)?;
-    create_state_files(path, states)?;
+    create_state_files(path, &actor.component.states)?;
 
-    let states_mod_rs = states
+    let states_mod_rs = actor
+        .component
+        .states
         .states
         .iter()
         .map(|state| format!("pub mod {};", state.ident.to_lowercase()))
@@ -42,7 +44,7 @@ fn create_states_module(path: &Path, states: &States) -> Result<(), Box<dyn Erro
         .map_err(|e| format!("Error writing states/mod.rs: {e}"))?;
 
     mod_rs
-        .write_all(generate_state_enum_impl(states)?.as_bytes())
+        .write_all(generate_state_enum_impl(actor)?.as_bytes())
         .map_err(|e| format!("Error writing states/mod.rs: {e}").into())
 }
 
@@ -97,16 +99,16 @@ fn create_root_mod_rs(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Erro
 }
 
 pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
-    actor.states.validate()?;
+    actor.component.states.validate()?;
 
     let mod_path = actor.create_mod_path();
     create_module_dir(&mod_path)?;
     create_module_files(&mod_path, &MODS)?;
 
     let states_path = actor.create_states_path();
-    create_states_module(&states_path, &actor.states)?;
+    create_states_module(&states_path, actor)?;
 
-    if let Some(message_set) = &actor.message_set {
+    if let Some(message_set) = &actor.component.message_set {
         let message_module_content = generate_message_set(message_set)?;
         fs::write(mod_path.join("messaging.rs"), message_module_content)?;
     }
@@ -126,7 +128,7 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
 {ext_state}
 "#,
         ident = actor.ident,
-        ext_state = ext_state_gen::generate_ext_state(&actor.ext_state),
+        ext_state = ext_state_gen::generate_ext_state(&actor.component.ext_state),
     );
     fs::write(mod_path.join(EXT_STATE_MOD), placeholder_ext_state)?;
 
@@ -140,7 +142,7 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
 mod tests {
 
     use super::create_module;
-    use crate::create_test_actor;
+    use crate::tests::create_test_actor;
     use std::path::Path;
 
     const TEST_PATH: &str = "tests/output";
