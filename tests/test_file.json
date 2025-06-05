@@ -1,94 +1,96 @@
 {
   "ident": "Actor",
   "path": "tests/output",
-  "states": {
-    "state_enum": {
-      "ident": "ActorStates",
-      "enumvariant": []
+  "component": {
+    "message_handles": {
+      "handles": [
+        {
+          "ident": "standard_handle",
+          "message_type": "Standard"
+        },
+        {
+          "ident": "customargs_handle",
+          "message_type": "CustomArgs"
+        }
+      ]
     },
-    "states": [
-      {
-        "ident": "Create",
-        "parent": null
+    "message_receivers": {
+      "receivers": [
+        {
+          "ident": "standard_rx",
+          "message_type": "Standard"
+        },
+        {
+          "ident": "customargs_rx",
+          "message_type": "CustomArgs"
+        }
+      ]
+    },
+    "states": {
+      "state_enum": {
+        "ident": "ActorStates",
+        "enumvariant": []
       },
-      {
-        "ident": "Update",
-        "parent": "Create"
-      }
-    ]
-  },
-  "message_set": {
-    "ident": "ActorMessage",
-    "enumvariant": [
-      {
-        "ident": "CustomValue1",
-        "args": [
-          "bloxide_core::messaging::Standard"
-        ]
-      },
-      {
-        "ident": "CustomValue2",
-        "args": [
-          "CustomArgs"
-        ]
-      }
-    ]
-  },
-  "message_handles": {
-    "handles": [
-      {
-        "ident": "standard_handle",
-        "message_type": "Standard"
-      },
-      {
-        "ident": "customargs_handle",
-        "message_type": "CustomArgs"
-      }
-    ]
-  },
-  "message_receivers": {
-    "receivers": [
-      {
-        "ident": "standard_rx",
-        "message_type": "Standard"
-      },
-      {
-        "ident": "customargs_rx",
-        "message_type": "CustomArgs"
-      }
-    ]
-  },
-  "ext_state": {
-    "ident": "ActorExtState",
-    "fields": [
-      {
-        "ident": "field1",
-        "ty": "String"
-      },
-      {
-        "ident": "field2",
-        "ty": "i32"
-      }
-    ],
-    "methods": [
-      {
-        "ident": "get_custom_value",
-        "args": [],
-        "ret": "String",
-        "body": "self.custom_value"
-      },
-      {
-        "ident": "get_custom_value2",
-        "args": [],
-        "ret": "i32",
-        "body": "self.custom_value2"
-      },
-      {
-        "ident": "hello_world",
-        "args": [],
-        "ret": "",
-        "body": "println!(\"Hello, world!\")"
-      }
-    ]
+      "states": [
+        {
+          "ident": "Create",
+          "parent": null
+        },
+        {
+          "ident": "Update",
+          "parent": "Create"
+        }
+      ]
+    },
+    "message_set": {
+      "ident": "ActorMessageSet",
+      "enumvariant": [
+        {
+          "ident": "CustomValue1",
+          "args": [
+            "bloxide_core::messaging::Standard"
+          ]
+        },
+        {
+          "ident": "CustomValue2",
+          "args": [
+            "CustomArgs"
+          ]
+        }
+      ]
+    },
+    "ext_state": {
+      "ident": "ActorExtState",
+      "fields": [
+        {
+          "ident": "field1",
+          "ty": "String"
+        },
+        {
+          "ident": "field2",
+          "ty": "i32"
+        }
+      ],
+      "methods": [
+        {
+          "ident": "get_custom_value",
+          "args": [],
+          "ret": "String",
+          "body": "self.custom_value"
+        },
+        {
+          "ident": "get_custom_value2",
+          "args": [],
+          "ret": "i32",
+          "body": "self.custom_value2"
+        },
+        {
+          "ident": "hello_world",
+          "args": [],
+          "ret": "",
+          "body": "println!(\"Hello, world!\")"
+        }
+      ]
+    }
   }
 }
