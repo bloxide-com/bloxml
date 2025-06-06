@@ -52,8 +52,8 @@ impl ToRust for Component {
             .map(|ms| ms.get().ident.clone())
             .unwrap_or_else(|| format!("{actor_name}MessageSet"));
 
-        let handles_ident = format!("{actor_name}Handles");
-        let receivers_ident = format!("{actor_name}Receivers");
+        let handles_ident = &self.message_handles.ident;
+        let receivers_ident = &self.message_receivers.ident;
 
         let handles = self.message_handles.to_rust();
         let receivers = self.message_receivers.to_rust();
@@ -65,15 +65,14 @@ impl ToRust for Component {
 //! It specifies the states, message types, extended state, and communication
 //! channels that make up the {actor_name} component.
 
-use crate::blox::{{StandardMessageHandle, StandardMessageRx}};
-
 use super::{{
-    ext_state::{actor_name}ExtState,
+    ext_state::{ext_state_name},
     messaging::{message_set_name},
-    runtime::{{{actor_name}Handle, {actor_name}Rx}},
     states::{states_name},
 }};
 use bloxide_tokio::{{
+    components::{{Components, Runtime}},
+    TokioMessageHandle,
     messaging::{{Message, MessageSet, StandardPayload}},
     TokioRuntime,
     }};
@@ -109,10 +108,10 @@ mod tests {
 
     #[test]
     fn test_to_rust() {
-        let mut handles = MessageHandles::new();
+        let mut handles = MessageHandles::new("ActorHandles");
         handles.add_handle(MessageHandle::new("test_handle", "TestMessage"));
 
-        let mut receivers = MessageReceivers::new();
+        let mut receivers = MessageReceivers::new("ActorReceivers");
         receivers.add_receiver(MessageReceiver::new("test_rx", "TestMessage"));
 
         let component = Component::new(
@@ -125,9 +124,12 @@ mod tests {
         );
         let rust_code = component.to_rust();
 
-        assert!(rust_code.contains("pub struct MessageHandles"));
-        assert!(rust_code.contains("pub struct MessageReceivers"));
-        assert!(rust_code.contains("pub test_handle: TokioMessageHandle<TestMessage>"));
-        assert!(rust_code.contains("pub test_rx: Receiver<TestMessage>"));
+        assert!(rust_code.contains("pub struct ActorHandles"));
+        assert!(rust_code.contains("pub struct ActorReceivers"));
+        assert!(
+            rust_code
+                .contains("pub test_handle: <TokioRuntime as Runtime>::MessageHandle<TestMessage>")
+        );
+        assert!(rust_code.contains("pub test_rx: <TokioRuntime as Runtime>::MessageHandle<TestMessage> as MessageSender>::ReceiverType"));
     }
 }

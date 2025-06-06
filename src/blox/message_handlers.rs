@@ -29,7 +29,7 @@ impl MessageHandle {
 impl ToRust for MessageHandle {
     fn to_rust(&self) -> String {
         format!(
-            "pub {}: TokioMessageHandle<{}>",
+            "pub {}: <TokioRuntime as Runtime>::MessageHandle<{}>",
             self.ident, self.message_type
         )
     }
@@ -61,21 +61,27 @@ impl MessageReceiver {
 
 impl ToRust for MessageReceiver {
     fn to_rust(&self) -> String {
-        format!("pub {}: Receiver<{}>", self.ident, self.message_type)
+        format!(
+            "pub {}: <TokioRuntime as Runtime>::MessageHandle<{}> as MessageSender>::ReceiverType",
+            self.ident, self.message_type
+        )
     }
 }
 
 /// Collection of message handles for an actor
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Default, Clone)]
 pub struct MessageHandles {
+    /// Name of the struct
+    pub ident: String,
     /// All handles for this actor
     pub handles: Vec<MessageHandle>,
 }
 
 impl MessageHandles {
     /// Create a new empty collection of message handles
-    pub fn new() -> Self {
+    pub fn new<S: Into<String>>(ident: S) -> Self {
         Self {
+            ident: ident.into(),
             handles: Vec::new(),
         }
     }
@@ -100,9 +106,10 @@ impl ToRust for MessageHandles {
             .collect::<Vec<_>>()
             .join(",\n\t");
         format!(
-            "pub struct MessageHandles {{
+            "pub struct {ident} {{
     {fields}
-}}"
+}}",
+            ident = self.ident
         )
     }
 }
@@ -110,14 +117,17 @@ impl ToRust for MessageHandles {
 /// Collection of message receivers for an actor
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Default, Clone)]
 pub struct MessageReceivers {
+    /// Name of the receivers struct
+    pub ident: String,
     /// All receivers for this actor
     pub receivers: Vec<MessageReceiver>,
 }
 
 impl MessageReceivers {
     /// Create a new empty collection of message receivers
-    pub fn new() -> Self {
+    pub fn new<S: Into<String>>(ident: S) -> Self {
         Self {
+            ident: ident.into(),
             receivers: Vec::new(),
         }
     }
@@ -142,9 +152,10 @@ impl ToRust for MessageReceivers {
             .collect::<Vec<_>>()
             .join(",\n\t");
         format!(
-            "pub struct MessageReceivers {{
+            "pub struct {ident} {{
     {fields}
-}}"
+}}",
+            ident = self.ident
         )
     }
 }
