@@ -60,7 +60,7 @@ pub fn generate_runtime(actor: &Actor) -> Result<String, Box<dyn Error>> {
 }};
 
 use super::{{
-    components::{actor_name}Components,
+    component::{actor_name}Components,
     states::{{
         {first_state_lower}::{first_state},
         {second_state_lower}::{second_state},

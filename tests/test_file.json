@@ -4,6 +4,7 @@
   "component": {
     "ident": "ActorComponents",
     "message_handles": {
+      "ident": "ActorHandles",
       "handles": [
         {
           "ident": "standard_handle",
@@ -16,6 +17,7 @@
       ]
     },
     "message_receivers": {
+      "ident": "ActorReceivers",
       "receivers": [
         {
           "ident": "standard_rx",
