@@ -2,6 +2,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Method, create::ToRust, field::Field};
 
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Default, Clone)]
+pub struct InitArgs {
+    pub ident: String,
+    pub fields: Vec<Field>,
+}
+
+impl InitArgs {
+    pub fn new<S>(ident: S, fields: Vec<Field>) -> Self
+    where
+        S: Into<String>,
+    {
+        Self {
+            ident: ident.into(),
+            fields,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Default)]
 pub struct ExtState {
     ident: String,
@@ -9,10 +27,12 @@ pub struct ExtState {
     fields: Vec<Field>,
     #[serde(default)]
     methods: Vec<Method>,
+    #[serde(default)]
+    init_args: InitArgs,
 }
 
 impl ExtState {
-    pub fn new<S>(ident: S, fields: Vec<Field>, methods: Vec<Method>) -> Self
+    pub fn new<S>(ident: S, fields: Vec<Field>, methods: Vec<Method>, init_args: InitArgs) -> Self
     where
         S: Into<String>,
     {
@@ -20,6 +40,7 @@ impl ExtState {
             ident: ident.into(),
             fields,
             methods,
+            init_args,
         }
     }
 
@@ -56,13 +77,6 @@ impl ToRust for ExtState {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let fields_init = self
-            .fields
-            .iter()
-            .map(|f| f.ident())
-            .collect::<Vec<_>>()
-            .join(",\n\t");
-
         let methods = self
             .methods
             .iter()
@@ -70,6 +84,21 @@ impl ToRust for ExtState {
             .collect::<Vec<_>>()
             .join("\n\t");
 
+        let init_args_ident = &self.init_args.ident;
+        let init_fields = self
+            .init_args
+            .fields
+            .iter()
+            .map(|f| format!("{ident}: args.{ident}", ident = f.ident()))
+            .collect::<Vec<_>>()
+            .join(",\n\t");
+        let default_fields = self
+            .fields
+            .iter()
+            .filter(|f| !self.init_args.fields.contains(f))
+            .map(|f| format!("{ident}: Default::default()", ident = f.ident()))
+            .collect::<Vec<_>>()
+            .join(",\n\t");
         format!(
             r#"pub struct {ident} {{
     {fields}
@@ -78,12 +107,24 @@ impl ToRust for ExtState {
 impl {ident} {{
     pub fn new({params}) -> Self {{
         Self {{
-            {fields_init}
+            {init_fields},
+            {default_fields}
         }}
     }}
 
     {methods}
-}}"#,
+}}
+    
+impl ExtendedState for {ident} {{
+    type InitArgs = {init_args_ident};
+    fn new(args: Self::InitArgs) -> Self {{
+        Self {{
+            {init_fields},
+            {default_fields}
+        }}
+    }}
+}}
+    "#,
             ident = self.ident,
         )
     }
@@ -105,6 +146,7 @@ pub(crate) mod tests {
                 Method::new("get_custom_value2", &vec![], "i32", "self.custom_value2"),
                 Method::new("hello_world", &vec![], "", r#"println!("Hello, world!")"#),
             ],
+            InitArgs::new("ActorInitArgs", vec![Field::new("field1", "String")]),
         )
     }
 
