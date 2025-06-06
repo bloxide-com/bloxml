@@ -61,11 +61,11 @@ impl Actor {
     }
 
     fn create_handles(
-        _ident: &str,
+        ident: &str,
         message_set: &Option<MessageSet>,
     ) -> (MessageHandles, MessageReceivers) {
-        let mut handles = MessageHandles::new();
-        let mut receivers = MessageReceivers::new();
+        let mut handles = MessageHandles::new(format!("{ident}Handles"));
+        let mut receivers = MessageReceivers::new(format!("{ident}Receivers"));
 
         let Some(message_set) = message_set else {
             return (handles, receivers);
