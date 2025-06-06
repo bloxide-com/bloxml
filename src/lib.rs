@@ -16,7 +16,7 @@ pub(crate) mod tests {
         actor::Actor,
         component::Component,
         enums::{EnumDef, EnumVariant},
-        ext_state::ExtState,
+        ext_state::{ExtState, InitArgs},
         message_handlers::{MessageHandle, MessageHandles, MessageReceiver, MessageReceivers},
         message_set::MessageSet,
         state::{State, StateEnum, States},
@@ -64,6 +64,7 @@ pub(crate) mod tests {
                 Method::new("get_custom_value2", &vec![], "i32", "self.custom_value2"),
                 Method::new("hello_world", &vec![], "", r#"println!("Hello, world!")"#),
             ],
+            InitArgs::new("ActorInitArgs", vec![Field::new("field1", "String")]),
         )
     }
 
