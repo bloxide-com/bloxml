@@ -80,14 +80,10 @@ fn create_module_files(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Err
 }
 
 fn create_root_mod_rs(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Error>> {
-    let mut modules: Vec<String> = mods
+    let modules: Vec<String> = mods
         .iter()
         .map(|mod_file| mod_file.split('.').next().unwrap().to_string())
         .collect();
-
-    if mod_path.join("messaging.rs").exists() {
-        modules.push("messaging".to_string());
-    }
 
     let mod_rs_content = modules
         .iter()
