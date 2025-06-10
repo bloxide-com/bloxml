@@ -84,7 +84,17 @@ impl ToRust for ExtState {
             .collect::<Vec<_>>()
             .join("\n\t");
 
-        let init_args_ident = &self.init_args.ident;
+        let init_args_ident = if self.init_args.ident.is_empty() {
+            "()"
+        } else {
+            &self.init_args.ident
+        };
+        let init_from_params = self
+            .fields
+            .iter()
+            .map(|f| f.ident())
+            .collect::<Vec<_>>()
+            .join(",\n\t");
         let init_fields = self
             .init_args
             .fields
@@ -100,15 +110,16 @@ impl ToRust for ExtState {
             .collect::<Vec<_>>()
             .join(",\n\t");
         format!(
-            r#"pub struct {ident} {{
+            r#"
+        use bloxide_tokio::state_machine::ExtendedState;
+        pub struct {ident} {{
     {fields}
 }}
 
 impl {ident} {{
     pub fn new({params}) -> Self {{
         Self {{
-            {init_fields},
-            {default_fields}
+            {init_from_params}
         }}
     }}
 
@@ -119,7 +130,7 @@ impl ExtendedState for {ident} {{
     type InitArgs = {init_args_ident};
     fn new(args: Self::InitArgs) -> Self {{
         Self {{
-            {init_fields},
+            {init_fields}
             {default_fields}
         }}
     }}

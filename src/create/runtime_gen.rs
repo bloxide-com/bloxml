@@ -27,14 +27,6 @@ pub fn generate_runtime(actor: &Actor) -> Result<String, Box<dyn Error>> {
                 .clone(),
         );
     for (receiver, variant) in iter {
-        let variant_name = variant
-            .args
-            .first()
-            .unwrap()
-            .as_ref()
-            .split("::")
-            .last()
-            .unwrap();
         select_arms.push_str(&format!(
             r#"                    Some(msg) = self.receivers.{ident}.recv() => {{
                         let current_state = self.state_machine.current_state.clone();
@@ -42,8 +34,7 @@ pub fn generate_runtime(actor: &Actor) -> Result<String, Box<dyn Error>> {
                     }}
 "#,
             ident = receiver.ident,
-            message_set_name = message_set_name,
-            variant_name = variant_name,
+            variant_name = variant.ident
         ));
     }
     let actor_name = actor.ident.clone();
