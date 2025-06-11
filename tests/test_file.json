@@ -20,21 +20,23 @@
       ]
     },
     "message_set": {
-      "ident": "ActorMessageSet",
-      "enumvariant": [
-        {
-          "ident": "CustomValue1",
-          "args": [
-            "bloxide_core::messaging::Standard"
-          ]
-        },
-        {
-          "ident": "CustomValue2",
-          "args": [
-            "CustomArgs"
-          ]
-        }
-      ]
+      "def": {
+        "ident": "ActorMessageSet",
+        "enumvariant": [
+          {
+            "ident": "CustomValue1",
+            "args": [
+              "bloxide_core::messaging::Standard"
+            ]
+          },
+          {
+            "ident": "CustomValue2",
+            "args": [
+              "CustomArgs"
+            ]
+          }
+        ]
+      }
     },
     "message_handles": {
       "ident": "ActorHandles",

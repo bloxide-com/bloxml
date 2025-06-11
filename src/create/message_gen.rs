@@ -24,8 +24,16 @@ use serde::{{Deserialize, Serialize}};
 use bloxide_tokio::messaging::{{Message, MessageSet}};
 
 {enum_definition}
+
+{custom_types}
 "#,
         ident = enum_def.ident,
+        custom_types = msg_set
+            .custom_types
+            .iter()
+            .map(generate_custom_type_definition)
+            .collect::<Result<Vec<_>, _>>()?
+            .join("\n\n"),
         enum_definition = generate_enum_definition(enum_def)?
     );
 
@@ -60,7 +68,6 @@ fn generate_enum_definition(enum_def: &EnumDef) -> Result<String, Box<dyn Error>
                 format!(
                     "{acc}    /// {ident}\n    {ident}({args}),\n",
                     ident = variant.ident,
-                    args = args
                 )
             }
         });
@@ -70,7 +77,45 @@ fn generate_enum_definition(enum_def: &EnumDef) -> Result<String, Box<dyn Error>
 ///
 /// This enum contains all possible message types that can be dispatched to the
 /// actor's state machine, allowing for unified message processing logic.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum {enum_name} {{
+{variants}}}"#
+    ))
+}
+
+fn generate_custom_type_definition(enum_def: &EnumDef) -> Result<String, Box<dyn Error>> {
+    let enum_name = &enum_def.ident;
+
+    let variants = enum_def
+        .variants
+        .iter()
+        .fold(String::new(), |acc, variant| {
+            // Check if the variant has args
+            if variant.args.is_empty() {
+                // Simple variant without args
+                format!(
+                    "{acc}    /// {ident}\n    {ident},\n",
+                    ident = variant.ident
+                )
+            } else {
+                let args = variant
+                    .args
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                format!(
+                    "{acc}    /// {ident}\n    {ident}({args}),\n",
+                    ident = variant.ident,
+                )
+            }
+        });
+
+    Ok(format!(
+        r#"/// The primary message set for the actor's state machine.
+///
+/// This enum contains all possible message types that can be dispatched to the
+/// actor's state machine, allowing for unified message processing logic.
 pub enum {enum_name} {{
 {variants}}}"#
     ))
@@ -96,7 +141,16 @@ mod tests {
                 EnumVariant::new("Variant2", vec![Link::new("SomeType2")]),
             ],
         );
-        let message_set = MessageSet::new(enum_def);
+
+        let custom_type = EnumDef::new(
+            "SomeType",
+            vec![
+                EnumVariant::new("Value1", vec![Link::new("String")]),
+                EnumVariant::new("Value2", vec![Link::new("i32")]),
+            ],
+        );
+
+        let message_set = MessageSet::with_custom_types(enum_def, vec![custom_type]);
 
         let result = generate_message_set(&message_set).expect("Failed to generate message set");
 
@@ -104,5 +158,10 @@ mod tests {
         assert!(result.contains("Variant1(Message<SomeType>)"));
         assert!(result.contains("Variant2(Message<SomeType2>)"));
         assert!(result.contains("impl MessageSet for TestMessageSet"));
+
+        // Check custom type generation
+        assert!(result.contains("pub enum SomeType"));
+        assert!(result.contains("Value1(String)"));
+        assert!(result.contains("Value2(i32)"));
     }
 }
