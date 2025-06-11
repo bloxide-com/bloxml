@@ -46,7 +46,10 @@ impl ToRust for Method {
         let args = self
             .args
             .iter()
-            .map(|arg| format!("{}: {}", arg.ident(), arg.ty()))
+            .map(|arg| match arg.ident().to_string().as_str() {
+                slf @ ("self" | "&self" | "&mut self") => slf.to_string(),
+                _ => format!("{}: {}", arg.ident(), arg.ty()),
+            })
             .collect::<Vec<_>>()
             .join(", ");
 
