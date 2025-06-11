@@ -29,7 +29,7 @@ impl MessageHandle {
 impl ToRust for MessageHandle {
     fn to_rust(&self) -> String {
         format!(
-            "pub {}: <TokioRuntime as Runtime>::MessageHandle<{}>",
+            "pub {}: TokioMessageHandle<{}>",
             self.ident, self.message_type
         )
     }
@@ -62,7 +62,7 @@ impl MessageReceiver {
 impl ToRust for MessageReceiver {
     fn to_rust(&self) -> String {
         format!(
-            "pub {}: <TokioRuntime as Runtime>::MessageHandle<{}> as MessageSender>::ReceiverType",
+            "pub {}: TokioMessageHandle<{}>",
             self.ident, self.message_type
         )
     }

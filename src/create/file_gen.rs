@@ -131,8 +131,12 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
 
     let runtime_content = generate_runtime(actor)?;
     fs::write(mod_path.join(RUNTIME_MOD), runtime_content)?;
-
-    create_root_mod_rs(&mod_path, &MODS)
+    let mods = {
+        let mut mods = MODS.to_vec();
+        mods.push("states");
+        mods
+    };
+    create_root_mod_rs(&mod_path, &mods)
 }
 
 #[cfg(test)]
