@@ -3,41 +3,31 @@ use std::error::Error;
 
 /// Generate a state implementation for a specific State in the States collection
 pub fn generate_inner_states(actor: &Actor, state: &State) -> Result<String, Box<dyn Error>> {
-    let parent_enum = &actor.component.states;
     let state_name = &state.ident;
-
-    let parent_relation = if let Some(parent) = &state.parent {
-        format!("{}::{parent}({parent})", parent_enum.state_enum.get().ident,)
-    } else {
-        format!("{}::Uninit(Uninit)", parent_enum.state_enum.get().ident)
-    };
+    let actor_mod = actor.ident.to_lowercase();
+    let component_mod = &actor.component.ident;
+    let component_ident = &actor.component.ident;
+    let message_set = &actor
+        .component
+        .message_set
+        .as_ref()
+        .map(|ms| ms.get().ident.clone())
+        .unwrap_or(format!("<{component_ident} as Components>::MessageSet"));
 
     let impl_content = format!(
-        r#"use bloxide_core::{{components::Components, message::MessageSet, state_machine::{{StateMachine, State, Transition}}}};
-use log::trace;
+        r#"use bloxide_tokio::{{components::Components, messaging::MessageSet, state_machine::{{StateMachine, State, StateEnum, Transition}}}};
+use crate::{actor_mod}::component::{{{component_mod}, messaging::{message_set}}};
 
 /// State implementation for {state_name} state
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct {state_name};
 
-impl State<Components> for {state_name} {{
-    fn on_entry(&self, state_machine: &mut StateMachine<Components>) {{
-        trace!("State on_entry: {state_name}");
-    }}
-
-    fn on_exit(&self, state_machine: &mut StateMachine<Components>) {{
-        trace!("State on_exit: {state_name}");
-    }}
-
-    fn parent(&self) -> Components::States {{
-        {parent_relation}
-    }}
-
+impl State<{component_ident}> for {state_name} {{
     fn handle_message(
         &self,
-        state_machine: &mut StateMachine<Components>,
-        message: Components::MessageSet,
-    ) -> Option<Transition<Components::States, Components::MessageSet>> {{
+        state_machine: &mut StateMachine<{component_ident}>,
+        message: {message_set},
+    ) -> Option<Transition<<{component_ident} as Components>::States, {message_set}>> {{
         None
     }}
 }}
@@ -49,16 +39,27 @@ impl State<Components> for {state_name} {{
 /// Generate a unified StateEnum implementation that contains all states
 pub fn generate_state_enum_impl(actor: &Actor) -> Result<String, Box<dyn Error>> {
     let states = &actor.component.states;
+    let actor_mod = actor.ident.to_lowercase();
     let component_ident = &actor.component.ident;
     let enum_name = states.state_enum.get().ident.clone();
+    let component_mod = &actor.component.ident;
+    let message_set = &actor
+        .component
+        .message_set
+        .as_ref()
+        .map(|ms| ms.get().ident.clone())
+        .unwrap_or(format!("<{component_ident} as Components>::MessageSet"));
 
-    let imports = states.states.iter().fold(String::new(), |acc, state| {
+    let mut imports = states.states.iter().fold(String::new(), |acc, state| {
         format!(
             "{acc}use {ident_lowercase}::{ident};\n",
             ident_lowercase = state.ident.to_lowercase(),
             ident = state.ident
         )
     });
+    imports.push_str(&format!(
+        "use crate::{actor_mod}::component::{{{component_mod}, messaging::{message_set}}};"
+    ));
 
     let variants = states.states.iter().fold(String::new(), |acc, state| {
         format!(
@@ -95,9 +96,7 @@ pub fn generate_state_enum_impl(actor: &Actor) -> Result<String, Box<dyn Error>>
     });
 
     let impl_content = format!(
-        r#"use bloxide_core::{{components::Components, message::MessageSet, state_machine::{{StateMachine, State, Transition}}}};
-use log::trace;
-
+        r#"use bloxide_tokio::{{components::Components, messaging::MessageSet, state_machine::{{StateMachine, State, Transition}}}};
 {imports}
 
 /// Enumeration of all possible states for the actor's state machine
@@ -136,6 +135,18 @@ impl State<{component_ident}> for {enum_name} {{
         match self {{
 {parent_arms}
         }}
+    }}
+}}
+
+impl StateEnum for {enum_name} {{
+    fn new() -> Self {{
+        Self::default()
+    }}
+}}
+
+impl Default for {enum_name} {{
+    fn default() -> Self {{
+        {enum_name}::Uninit(Uninit)
     }}
 }}
 "#,

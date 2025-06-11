@@ -72,13 +72,6 @@ impl Runnable<{actor_name}Components> for Blox<{actor_name}Components> {{
                 select! {{
 {select_arms}
                 }}
-
-                if matches!(
-                    self.state_machine.current_state,
-                    {state_enum_name}::ShuttingDown(_)
-                ) {{
-                    break;
-                }}
             }}
         }})
     }}

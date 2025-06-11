@@ -20,7 +20,6 @@ pub fn generate_message_set(msg_set: &MessageSet) -> Result<String, Box<dyn Erro
 //! ## Message Structure
 //! - `MessageSet` - The top-level message set enum that wraps all message types
 
-use serde::{{Deserialize, Serialize}};
 use bloxide_tokio::messaging::{{Message, MessageSet}};
 
 {enum_definition}
