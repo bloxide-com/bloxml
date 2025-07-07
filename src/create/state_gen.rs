@@ -183,7 +183,7 @@ mod tests {
         eprintln!("State impl for {ident}: {impl_content}");
 
         assert!(impl_content.contains(&format!("pub struct {ident}")));
-        assert!(impl_content.contains(&format!("impl State<Components> for {ident}")));
+        assert!(impl_content.contains(&format!("impl State<ActorComponents> for {ident}")));
     }
 
     #[test]

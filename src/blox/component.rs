@@ -128,8 +128,8 @@ mod tests {
         assert!(rust_code.contains("pub struct ActorReceivers"));
         assert!(
             rust_code
-                .contains("pub test_handle: <TokioRuntime as Runtime>::MessageHandle<TestMessage>")
+                .contains("pub test_handle: TokioMessageHandle<TestMessage>")
         );
-        assert!(rust_code.contains("pub test_rx: <TokioRuntime as Runtime>::MessageHandle<TestMessage> as MessageSender>::ReceiverType"));
+        assert!(rust_code.contains("pub test_rx: <<bloxide_tokio::TokioRuntime as Runtime>::MessageHandle<TestMessage> as MessageSender>::ReceiverType"));
     }
 }
