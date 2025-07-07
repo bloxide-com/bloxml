@@ -15,8 +15,8 @@ pub fn generate_inner_states(actor: &Actor, state: &State) -> Result<String, Box
         .unwrap_or(format!("<{component_ident} as Components>::MessageSet"));
 
     let impl_content = format!(
-        r#"use bloxide_tokio::{{components::Components, messaging::MessageSet, state_machine::{{StateMachine, State, StateEnum, Transition}}}};
-use crate::{actor_mod}::component::{{{component_mod}, messaging::{message_set}}};
+        r#"use bloxide_tokio::{{components::Components, state_machine::{{StateMachine, State, Transition}}}};
+use crate::{actor_mod}::{{component::{component_mod}, messaging::{message_set}}};
 
 /// State implementation for {state_name} state
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,7 +58,7 @@ pub fn generate_state_enum_impl(actor: &Actor) -> Result<String, Box<dyn Error>>
         )
     });
     imports.push_str(&format!(
-        "use crate::{actor_mod}::component::{{{component_mod}, messaging::{message_set}}};"
+        "use crate::{actor_mod}::{{component::{component_mod}, messaging::{message_set}}};"
     ));
 
     let variants = states.states.iter().fold(String::new(), |acc, state| {
@@ -96,7 +96,7 @@ pub fn generate_state_enum_impl(actor: &Actor) -> Result<String, Box<dyn Error>>
     });
 
     let impl_content = format!(
-        r#"use bloxide_tokio::{{components::Components, messaging::MessageSet, state_machine::{{StateMachine, State, Transition}}}};
+        r#"use bloxide_tokio::{{components::Components, messaging::MessageSet, state_machine::{{StateMachine, State, StateEnum, Transition}}}};
 {imports}
 
 /// Enumeration of all possible states for the actor's state machine

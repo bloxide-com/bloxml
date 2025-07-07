@@ -73,7 +73,7 @@ use super::{{
 use bloxide_tokio::{{
     components::{{Components, Runtime}},
     TokioMessageHandle,
-    messaging::{{Message, MessageSet, StandardPayload}},
+    messaging::{{Message, MessageSet, MessageSender, StandardPayload}},
     TokioRuntime,
     }};
 

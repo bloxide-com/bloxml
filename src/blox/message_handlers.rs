@@ -62,7 +62,7 @@ impl MessageReceiver {
 impl ToRust for MessageReceiver {
     fn to_rust(&self) -> String {
         format!(
-            "pub {}: TokioMessageHandle<{}>",
+            "pub {}: <<bloxide_tokio::TokioRuntime as Runtime>::MessageHandle<{}> as MessageSender>::ReceiverType",
             self.ident, self.message_type
         )
     }
