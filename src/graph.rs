@@ -3,9 +3,13 @@ mod node;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::{Directed, Direction, Graph, Incoming, algo};
+use std::collections::HashMap;
 use std::collections::hash_map::RandomState;
+use std::error::Error;
 
 pub use node::*;
+
+use crate::blox::actor::Actor;
 
 pub struct RustGraph {
     pub graph: Graph<Node, Relation, Directed>,
@@ -217,7 +221,7 @@ impl RustGraph {
     }
 
     // Find a module by its full path using simple step-by-step traversal (MUCH BETTER!)
-    fn find_module_by_path_hierarchical(&self, path: &str) -> Option<NodeIndex> {
+    pub fn find_module_by_path_hierarchical(&self, path: &str) -> Option<NodeIndex> {
         let segments: Vec<&str> = path.split("::").collect();
         if segments.is_empty() {
             return None;
@@ -300,6 +304,383 @@ impl RustGraph {
             }
         }
         path.into_iter().rev().collect::<Vec<_>>().join("::")
+    }
+}
+
+/// Code generation specific wrapper around RustGraph
+///
+/// This provides additional functionality for code generation including
+/// import tracking, dependency analysis, and module organization.
+pub struct CodeGenerationGraph {
+    pub graph: RustGraph,
+    /// Tracks external dependencies (crates, std library, etc.)
+    external_dependencies: HashMap<String, Vec<String>>,
+}
+
+impl CodeGenerationGraph {
+    pub fn new() -> Self {
+        Self {
+            graph: RustGraph::new(),
+            external_dependencies: HashMap::new(),
+        }
+    }
+
+    /// Add an external dependency (from another crate)
+    pub fn add_external_dependency(&mut self, module: &str, import: &str) {
+        self.external_dependencies
+            .entry(module.to_string())
+            .or_insert_with(Vec::new)
+            .push(import.to_string());
+    }
+
+    /// Get all imports needed for a specific module
+    pub fn get_imports_for_module(&self, module_idx: NodeIndex) -> Vec<String> {
+        let mut imports = Vec::new();
+
+        // Add external dependencies for this module
+        if let Some(node) = self.graph.graph.node_weight(module_idx) {
+            let module_name = node.name();
+            if let Some(ext_deps) = self.external_dependencies.get(&module_name) {
+                imports.extend(ext_deps.clone());
+            }
+        }
+
+        // Add internal dependencies (other modules this module depends on)
+        let connected = self.graph.find_connected_nodes(module_idx);
+        for (connected_idx, _connected_node, relation) in connected {
+            if matches!(relation, Relation::Uses) {
+                let connected_path = self.graph.get_node_path(connected_idx);
+                let current_path = self.graph.get_node_path(module_idx);
+                let import_path = self.resolve_import_path(&current_path, &connected_path);
+                imports.push(format!("use {};", import_path));
+            }
+        }
+
+        imports.sort();
+        imports.dedup();
+        imports
+    }
+
+    /// Resolve the relative import path between two modules
+    fn resolve_import_path(&self, _from_path: &str, to_path: &str) -> String {
+        // For now, use simple crate-relative paths
+        // TODO: Implement more sophisticated relative path resolution based on module hierarchy
+        format!("crate::{}", to_path)
+    }
+
+    /// Analyze dependencies and return modules in topological order
+    pub fn get_generation_order(&self) -> Result<Vec<NodeIndex>, String> {
+        self.graph
+            .topological_sort()
+            .map_err(|_| "Circular dependency detected in module graph".to_string())
+    }
+
+    /// Add a generated type to the graph and track its dependencies
+    pub fn add_generated_type(&mut self, type_path: &str, dependencies: &[String]) -> NodeIndex {
+        let type_idx = self.graph.add_type_from_path(type_path);
+
+        // Add dependencies
+        for dep_path in dependencies {
+            let dep_idx = self.graph.add_type_from_path(dep_path);
+            self.graph.add_edge(type_idx, dep_idx, Relation::Uses);
+        }
+
+        type_idx
+    }
+
+    /// Add a generated module and track its contents
+    pub fn add_generated_module(&mut self, module_path: &str) -> NodeIndex {
+        if let Some(existing) = self.graph.find_module_by_path_hierarchical(module_path) {
+            existing
+        } else {
+            self.graph.add_from_path(
+                module_path,
+                Node::Module(Module {
+                    name: module_path.split("::").last().unwrap().to_string(),
+                    path: module_path.to_string(),
+                }),
+            )
+        }
+    }
+
+    /// Get a visual representation of the dependency graph
+    pub fn debug_dependencies(&self) -> String {
+        let mut output = String::new();
+        output.push_str("=== Code Generation Dependency Graph ===\n");
+
+        for node_idx in self.graph.graph.node_indices() {
+            let node = &self.graph.graph[node_idx];
+            output.push_str(&format!("Node: {} ({})\n", node.name(), node.node_str()));
+
+            let connections = self.graph.find_connected_nodes(node_idx);
+            for (_, connected_node, relation) in connections {
+                output.push_str(&format!(
+                    "  -> {} ({:?})\n",
+                    connected_node.name(),
+                    relation
+                ));
+            }
+            output.push('\n');
+        }
+
+        output
+    }
+
+    /// Populate the graph from an Actor configuration
+    ///
+    /// This analyzes the actor's components, states, messages, etc. and builds
+    /// a comprehensive dependency graph for code generation.
+    pub fn populate_from_actor(&mut self, actor: &Actor) -> Result<(), Box<dyn Error>> {
+        let actor_name = &actor.ident;
+        let actor_module_path = actor_name.to_lowercase();
+
+        // Create the main actor module
+        let _actor_module_idx = self.add_generated_module(&actor_module_path);
+
+        // Add core submodules
+        let component_module_idx =
+            self.add_generated_module(&format!("{}::component", actor_module_path));
+        let states_module_idx =
+            self.add_generated_module(&format!("{}::states", actor_module_path));
+        let ext_state_module_idx =
+            self.add_generated_module(&format!("{}::ext_state", actor_module_path));
+        let runtime_module_idx =
+            self.add_generated_module(&format!("{}::runtime", actor_module_path));
+
+        // Add messaging module if message set exists
+        let messaging_module_idx = if actor.component.message_set.is_some() {
+            Some(self.add_generated_module(&format!("{}::messaging", actor_module_path)))
+        } else {
+            None
+        };
+
+        // Add external dependencies for each module
+        self.add_bloxide_dependencies(&actor_module_path);
+
+        // Populate component types and dependencies
+        self.populate_component_dependencies(actor, component_module_idx)?;
+
+        // Populate state types and dependencies
+        self.populate_state_dependencies(actor, states_module_idx)?;
+
+        // Populate message set dependencies
+        if let Some(msg_idx) = messaging_module_idx {
+            self.populate_message_dependencies(actor, msg_idx)?;
+        }
+
+        // Populate ext state dependencies
+        self.populate_ext_state_dependencies(actor, ext_state_module_idx)?;
+
+        // Populate runtime dependencies
+        self.populate_runtime_dependencies(actor, runtime_module_idx)?;
+
+        Ok(())
+    }
+
+    /// Add standard bloxide dependencies
+    fn add_bloxide_dependencies(&mut self, actor_module: &str) {
+        for import in [
+            "bloxide_tokio::components::{Components, Runtime}",
+            "bloxide_tokio::TokioMessageHandle",
+            "bloxide_tokio::messaging::{Message, MessageSet, MessageSender, StandardPayload}",
+            "bloxide_tokio::TokioRuntime",
+            "bloxide_tokio::state_machine::{StateMachine, State, Transition, StateEnum, ExtendedState}",
+            "bloxide_tokio::components::{Runnable, *}",
+            "bloxide_tokio::runtime::*",
+            "bloxide_tokio::std_exports::*",
+        ] {
+            self.add_external_dependency(actor_module, import);
+        }
+    }
+
+    /// Populate component-related types and their dependencies
+    fn populate_component_dependencies(
+        &mut self,
+        actor: &Actor,
+        _component_module_idx: NodeIndex,
+    ) -> Result<(), Box<dyn Error>> {
+        let actor_module = actor.ident.to_lowercase();
+        let component_name = &actor.component.ident;
+
+        // Add the main component type
+        let component_type_path = format!("{}::component::{}", actor_module, component_name);
+        let mut component_deps = vec![
+            format!(
+                "{}::states::{}",
+                actor_module,
+                actor.component.states.state_enum.get().ident
+            ),
+            format!(
+                "{}::ext_state::{}",
+                actor_module,
+                actor.component.ext_state.ident()
+            ),
+        ];
+
+        if let Some(message_set) = &actor.component.message_set {
+            component_deps.push(format!(
+                "{}::messaging::{}",
+                actor_module,
+                message_set.get().ident
+            ));
+        }
+
+        let component_type_idx = self.add_generated_type(&component_type_path, &component_deps);
+
+        // Add message handles type
+        let handles_path = format!(
+            "{}::component::{}",
+            actor_module, actor.component.message_handles.ident
+        );
+        let handles_idx = self.graph.add_type_from_path(&handles_path);
+        self.graph
+            .add_edge(component_type_idx, handles_idx, Relation::Contains);
+
+        // Add message receivers type
+        let receivers_path = format!(
+            "{}::component::{}",
+            actor_module, actor.component.message_receivers.ident
+        );
+        let receivers_idx = self.graph.add_type_from_path(&receivers_path);
+        self.graph
+            .add_edge(component_type_idx, receivers_idx, Relation::Contains);
+
+        Ok(())
+    }
+
+    /// Populate state-related types and their dependencies
+    fn populate_state_dependencies(
+        &mut self,
+        actor: &Actor,
+        _states_module_idx: NodeIndex,
+    ) -> Result<(), Box<dyn Error>> {
+        let actor_module = actor.ident.to_lowercase();
+        let states = &actor.component.states;
+
+        // Add the main state enum
+        let state_enum_path = format!(
+            "{}::states::{}",
+            actor_module,
+            states.state_enum.get().ident
+        );
+
+        let component_dep = format!("{}::component::{}", actor_module, actor.component.ident);
+        let mut state_enum_deps = vec![component_dep];
+
+        if let Some(message_set) = &actor.component.message_set {
+            let messaging_dep = format!("{}::messaging::{}", actor_module, message_set.get().ident);
+            state_enum_deps.push(messaging_dep);
+        }
+
+        let state_enum_idx = self.add_generated_type(&state_enum_path, &state_enum_deps);
+
+        // Add individual state types
+        for state in &states.states {
+            let state_path = format!("{}::states::{}", actor_module, state.ident);
+
+            let component_dep = format!("{}::component::{}", actor_module, actor.component.ident);
+            let mut individual_state_deps = vec![component_dep];
+
+            if let Some(message_set) = &actor.component.message_set {
+                let messaging_dep =
+                    format!("{}::messaging::{}", actor_module, message_set.get().ident);
+                individual_state_deps.push(messaging_dep);
+            }
+
+            let state_idx = self.add_generated_type(&state_path, &individual_state_deps);
+
+            // The state enum contains the individual states
+            self.graph
+                .add_edge(state_enum_idx, state_idx, Relation::Uses);
+        }
+
+        Ok(())
+    }
+
+    /// Populate message set dependencies
+    fn populate_message_dependencies(
+        &mut self,
+        actor: &Actor,
+        _messaging_module_idx: NodeIndex,
+    ) -> Result<(), Box<dyn Error>> {
+        let actor_module = actor.ident.to_lowercase();
+
+        if let Some(message_set) = &actor.component.message_set {
+            // Add the main message set enum
+            let message_set_path =
+                format!("{}::messaging::{}", actor_module, message_set.get().ident);
+            let message_set_idx = self.graph.add_type_from_path(&message_set_path);
+
+            // Add custom types
+            for custom_type in &message_set.custom_types {
+                let custom_type_path =
+                    format!("{}::messaging::{}", actor_module, custom_type.ident);
+                let custom_type_idx = self.graph.add_type_from_path(&custom_type_path);
+
+                // Message set uses custom types
+                self.graph
+                    .add_edge(message_set_idx, custom_type_idx, Relation::Uses);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Populate extended state dependencies
+    fn populate_ext_state_dependencies(
+        &mut self,
+        actor: &Actor,
+        _ext_state_module_idx: NodeIndex,
+    ) -> Result<(), Box<dyn Error>> {
+        let actor_module = actor.ident.to_lowercase();
+        let ext_state = &actor.component.ext_state;
+
+        // Add the extended state type
+        let ext_state_path = format!("{}::ext_state::{}", actor_module, ext_state.ident());
+        let _ext_state_idx = self.graph.add_type_from_path(&ext_state_path);
+
+        // TODO: Analyze field types and method dependencies
+
+        Ok(())
+    }
+
+    /// Populate runtime dependencies
+    fn populate_runtime_dependencies(
+        &mut self,
+        actor: &Actor,
+        _runtime_module_idx: NodeIndex,
+    ) -> Result<(), Box<dyn Error>> {
+        let actor_module = actor.ident.to_lowercase();
+
+        // Runtime implementation depends on component, states, and messaging
+        let runtime_deps = vec![
+            format!("{}::component::{}", actor_module, actor.component.ident),
+            format!(
+                "{}::states::{}",
+                actor_module,
+                actor.component.states.state_enum.get().ident
+            ),
+        ];
+
+        let mut all_deps = runtime_deps.clone();
+        if let Some(message_set) = &actor.component.message_set {
+            all_deps.push(format!(
+                "{}::messaging::{}",
+                actor_module,
+                message_set.get().ident
+            ));
+        }
+
+        // Add individual state dependencies
+        for state in &actor.component.states.states {
+            all_deps.push(format!("{}::states::{}", actor_module, state.ident));
+        }
+
+        // Create runtime implementation node (not a separate type, but tracks dependencies)
+        let runtime_impl_path = format!("{}::runtime::Runnable", actor_module);
+        let _runtime_idx = self.add_generated_type(&runtime_impl_path, &all_deps);
+
+        Ok(())
     }
 }
 

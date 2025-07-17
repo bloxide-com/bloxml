@@ -1,3 +1,4 @@
+use crate::graph::CodeGenerationGraph;
 use crate::{actor::Actor, blox::state::State};
 use std::error::Error;
 
@@ -154,6 +155,25 @@ impl Default for {enum_name} {{
     );
 
     Ok(impl_content)
+}
+
+/// Generate a state implementation with graph-based import resolution
+pub fn generate_inner_states_with_graph(
+    actor: &Actor,
+    state: &State,
+    _graph: &CodeGenerationGraph,
+) -> Result<String, Box<dyn Error>> {
+    // For now, use the basic generator - import resolution will be enhanced later
+    generate_inner_states(actor, state)
+}
+
+/// Generate a unified StateEnum implementation with graph-based import resolution
+pub fn generate_state_enum_impl_with_graph(
+    actor: &Actor,
+    _graph: &CodeGenerationGraph,
+) -> Result<String, Box<dyn Error>> {
+    // For now, use the basic generator - import resolution will be enhanced later
+    generate_state_enum_impl(actor)
 }
 
 #[cfg(test)]

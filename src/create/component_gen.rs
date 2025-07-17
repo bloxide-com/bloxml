@@ -1,10 +1,42 @@
 use crate::blox::actor::Actor;
+use crate::graph::CodeGenerationGraph;
 
 use super::ToRust;
 
 /// Generates the component definition file for an actor
 pub fn generate_component(actor: &Actor) -> String {
     actor.component.to_rust()
+}
+
+/// Generates the component definition with graph-based import resolution
+pub fn generate_component_with_graph(
+    actor: &Actor,
+    graph: &CodeGenerationGraph,
+) -> Result<String, Box<dyn std::error::Error>> {
+    // Find the component module in the graph to get its imports
+    let actor_module = actor.ident.to_lowercase();
+    let component_module_path = format!("{}::component", actor_module);
+
+    if let Some(component_module_idx) = graph
+        .graph
+        .find_module_by_path_hierarchical(&component_module_path)
+    {
+        let imports = graph.get_imports_for_module(component_module_idx);
+
+        // Generate basic component content
+        let basic_content = actor.component.to_rust();
+
+        // Add imports if any were found
+        if !imports.is_empty() {
+            let imports_section = format!("{}\n\n", imports.join("\n"));
+            Ok(format!("{}{}", imports_section, basic_content))
+        } else {
+            Ok(basic_content)
+        }
+    } else {
+        // Fallback to basic generation if graph lookup fails
+        Ok(actor.component.to_rust())
+    }
 }
 
 #[cfg(test)]

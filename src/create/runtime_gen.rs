@@ -1,4 +1,5 @@
 use crate::blox::actor::Actor;
+use crate::graph::CodeGenerationGraph;
 use std::error::Error;
 
 pub fn generate_runtime(actor: &Actor) -> Result<String, Box<dyn Error>> {
@@ -83,4 +84,13 @@ impl Runnable<{actor_name}Components> for Blox<{actor_name}Components> {{
     );
 
     Ok(content)
+}
+
+/// Generate runtime code with graph-based import resolution
+pub fn generate_runtime_with_graph(
+    actor: &Actor,
+    _graph: &CodeGenerationGraph,
+) -> Result<String, Box<dyn Error>> {
+    // For now, use the basic generator - import resolution will be enhanced later
+    generate_runtime(actor)
 }

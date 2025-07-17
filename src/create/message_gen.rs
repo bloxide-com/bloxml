@@ -1,3 +1,4 @@
+use crate::graph::CodeGenerationGraph;
 use crate::{blox::enums::EnumDef, blox::message_set::MessageSet};
 use std::error::Error;
 
@@ -118,6 +119,19 @@ fn generate_custom_type_definition(enum_def: &EnumDef) -> Result<String, Box<dyn
 pub enum {enum_name} {{
 {variants}}}"#
     ))
+}
+
+/// Generates Rust code for a message set with graph-based import resolution
+pub fn generate_message_set_with_graph(
+    msg_set: &MessageSet,
+    _graph: &CodeGenerationGraph,
+) -> Result<String, Box<dyn Error>> {
+    // Generate basic message set content
+    let basic_content = generate_message_set(msg_set)?;
+
+    // Try to find the messaging module in the graph for import resolution
+    // For now, return the basic content since the import logic will be enhanced later
+    Ok(basic_content)
 }
 
 #[cfg(test)]
