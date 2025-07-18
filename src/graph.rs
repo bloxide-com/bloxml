@@ -3,16 +3,29 @@ mod node;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::{Directed, Direction, Graph, Incoming, algo};
-use std::collections::HashMap;
 use std::collections::hash_map::RandomState;
 use std::error::Error;
 
 pub use node::*;
 
 use crate::blox::actor::Actor;
+use crate::blox::component::Component;
+use crate::blox::message_set::MessageSet;
+use crate::blox::state::States;
 
+const PRELUDE_TYPES: &[&str] = &[
+    "String", "i32", "u32", "i64", "u64", "bool", "Vec", "Option", "Result", "Box", "Arc", "Rc",
+];
+
+#[derive(Debug, Clone)]
 pub struct RustGraph {
     pub graph: Graph<Node, Relation, Directed>,
+}
+
+impl Default for RustGraph {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RustGraph {
@@ -48,8 +61,8 @@ impl RustGraph {
         source: NodeIndex,
         target: NodeIndex,
         relation: Relation,
-    ) -> Option<EdgeIndex> {
-        Some(self.graph.add_edge(source, target, relation))
+    ) -> EdgeIndex {
+        self.graph.add_edge(source, target, relation)
     }
 
     // Find nodes by exact name match (now using graph iteration - simpler!)
@@ -311,48 +324,94 @@ impl RustGraph {
 ///
 /// This provides additional functionality for code generation including
 /// import tracking, dependency analysis, and module organization.
-pub struct CodeGenerationGraph {
+pub struct CodeGenGraph {
     pub graph: RustGraph,
-    /// Tracks external dependencies (crates, std library, etc.)
-    external_dependencies: HashMap<String, Vec<String>>,
 }
 
-impl CodeGenerationGraph {
+impl Default for CodeGenGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CodeGenGraph {
     pub fn new() -> Self {
         Self {
             graph: RustGraph::new(),
-            external_dependencies: HashMap::new(),
         }
     }
 
-    /// Add an external dependency (from another crate)
-    pub fn add_external_dependency(&mut self, module: &str, import: &str) {
-        self.external_dependencies
-            .entry(module.to_string())
-            .or_insert_with(Vec::new)
-            .push(import.to_string());
+    /// Add a dependency between two modules/types using their string paths
+    /// This is a convenience wrapper around add_dependency that handles path lookup
+    pub fn add_dependency_by_path(&mut self, from_module: &str, to_path: &str) {
+        // Get or create the "from" module node
+        let from_module_idx =
+            if let Some(existing) = self.graph.find_module_by_path_hierarchical(from_module) {
+                existing
+            } else {
+                self.add_generated_module(from_module)
+            };
+
+        // Determine what type of node the "to" path represents
+        let to_idx = if to_path.contains("::") {
+            // This is a module or type path like "bloxide_tokio::components::Components"
+            if to_path.ends_with("::*") {
+                // This is a glob import like "bloxide_tokio::runtime::*"
+                let module_path = to_path.trim_end_matches("::*");
+                self.graph.add_from_path(
+                    module_path,
+                    Node::Module(Module {
+                        name: module_path.split("::").last().unwrap().to_string(),
+                        path: module_path.to_string(),
+                    }),
+                )
+            } else {
+                // This is a specific type like "bloxide_tokio::components::Components"
+                self.graph.add_type_from_path(to_path)
+            }
+        } else {
+            // This is just a type name, treat as a type in the current module context
+            self.graph.add_type_from_path(to_path)
+        };
+
+        // Add the Uses edge using the direct method
+        self.graph.add_edge(from_module_idx, to_idx, Relation::Uses);
     }
 
-    /// Get all imports needed for a specific module
+    /// Get or create a node by path - useful for preparing indices for add_dependency
+    pub fn get_or_create_node_by_path(&mut self, path: &str) -> NodeIndex {
+        if path.contains("::") {
+            if path.ends_with("::*") {
+                // This is a glob import like "bloxide_tokio::runtime::*"
+                let module_path = path.trim_end_matches("::*");
+                self.graph.add_from_path(
+                    module_path,
+                    Node::Module(Module {
+                        name: module_path.split("::").last().unwrap().to_string(),
+                        path: module_path.to_string(),
+                    }),
+                )
+            } else {
+                // This is a specific type like "bloxide_tokio::components::Components"
+                self.graph.add_type_from_path(path)
+            }
+        } else {
+            // This is just a type name, treat as a type
+            self.graph.add_type_from_path(path)
+        }
+    }
+
+    /// Get all imports needed for a specific module by traversing Uses edges
     pub fn get_imports_for_module(&self, module_idx: NodeIndex) -> Vec<String> {
         let mut imports = Vec::new();
 
-        // Add external dependencies for this module
-        if let Some(node) = self.graph.graph.node_weight(module_idx) {
-            let module_name = node.name();
-            if let Some(ext_deps) = self.external_dependencies.get(&module_name) {
-                imports.extend(ext_deps.clone());
-            }
-        }
-
-        // Add internal dependencies (other modules this module depends on)
+        // Find all nodes this module Uses
         let connected = self.graph.find_connected_nodes(module_idx);
-        for (connected_idx, _connected_node, relation) in connected {
+        for (connected_idx, connected_node, relation) in connected {
             if matches!(relation, Relation::Uses) {
-                let connected_path = self.graph.get_node_path(connected_idx);
-                let current_path = self.graph.get_node_path(module_idx);
-                let import_path = self.resolve_import_path(&current_path, &connected_path);
-                imports.push(format!("use {};", import_path));
+                let import_statement =
+                    self.generate_import_statement(&connected_node, connected_idx);
+                imports.push(import_statement);
             }
         }
 
@@ -361,11 +420,35 @@ impl CodeGenerationGraph {
         imports
     }
 
-    /// Resolve the relative import path between two modules
-    fn resolve_import_path(&self, _from_path: &str, to_path: &str) -> String {
-        // For now, use simple crate-relative paths
-        // TODO: Implement more sophisticated relative path resolution based on module hierarchy
-        format!("crate::{}", to_path)
+    /// Generate the appropriate import statement for a node
+    fn generate_import_statement(&self, node: &Node, node_idx: NodeIndex) -> String {
+        let node_path = self.graph.get_node_path(node_idx);
+
+        match node {
+            Node::Module(_) => {
+                // For module imports (glob imports), check if it ends with runtime or similar
+                if node_path.contains("runtime") || node_path.contains("std_exports") {
+                    format!("use {}::*;", node_path)
+                } else {
+                    format!("use {};", node_path)
+                }
+            }
+            Node::Type(_) | Node::Trait(_) => {
+                // For specific types/traits
+                format!("use {};", node_path)
+            }
+            Node::Function(_) => {
+                format!("use {};", node_path)
+            }
+            Node::Crate(_) => {
+                format!("use {};", node_path)
+            }
+        }
+    }
+
+    /// Get the full path of a node by node index (delegated to inner graph)
+    pub fn get_node_path(&self, node_idx: NodeIndex) -> String {
+        self.graph.get_node_path(node_idx)
     }
 
     /// Analyze dependencies and return modules in topological order
@@ -439,23 +522,19 @@ impl CodeGenerationGraph {
 
         // Add core submodules
         let component_module_idx =
-            self.add_generated_module(&format!("{}::component", actor_module_path));
-        let states_module_idx =
-            self.add_generated_module(&format!("{}::states", actor_module_path));
+            self.add_generated_module(&format!("{actor_module_path}::component"));
+        let states_module_idx = self.add_generated_module(&format!("{actor_module_path}::states"));
         let ext_state_module_idx =
-            self.add_generated_module(&format!("{}::ext_state", actor_module_path));
+            self.add_generated_module(&format!("{actor_module_path}::ext_state"));
         let runtime_module_idx =
-            self.add_generated_module(&format!("{}::runtime", actor_module_path));
+            self.add_generated_module(&format!("{actor_module_path}::runtime"));
 
         // Add messaging module if message set exists
         let messaging_module_idx = if actor.component.message_set.is_some() {
-            Some(self.add_generated_module(&format!("{}::messaging", actor_module_path)))
+            Some(self.add_generated_module(&format!("{actor_module_path}::messaging")))
         } else {
             None
         };
-
-        // Add external dependencies for each module
-        self.add_bloxide_dependencies(&actor_module_path);
 
         // Populate component types and dependencies
         self.populate_component_dependencies(actor, component_module_idx)?;
@@ -477,22 +556,6 @@ impl CodeGenerationGraph {
         Ok(())
     }
 
-    /// Add standard bloxide dependencies
-    fn add_bloxide_dependencies(&mut self, actor_module: &str) {
-        for import in [
-            "bloxide_tokio::components::{Components, Runtime}",
-            "bloxide_tokio::TokioMessageHandle",
-            "bloxide_tokio::messaging::{Message, MessageSet, MessageSender, StandardPayload}",
-            "bloxide_tokio::TokioRuntime",
-            "bloxide_tokio::state_machine::{StateMachine, State, Transition, StateEnum, ExtendedState}",
-            "bloxide_tokio::components::{Runnable, *}",
-            "bloxide_tokio::runtime::*",
-            "bloxide_tokio::std_exports::*",
-        ] {
-            self.add_external_dependency(actor_module, import);
-        }
-    }
-
     /// Populate component-related types and their dependencies
     fn populate_component_dependencies(
         &mut self,
@@ -503,7 +566,7 @@ impl CodeGenerationGraph {
         let component_name = &actor.component.ident;
 
         // Add the main component type
-        let component_type_path = format!("{}::component::{}", actor_module, component_name);
+        let component_type_path = format!("{actor_module}::component::{component_name}");
         let mut component_deps = vec![
             format!(
                 "{}::states::{}",
@@ -677,10 +740,290 @@ impl CodeGenerationGraph {
         }
 
         // Create runtime implementation node (not a separate type, but tracks dependencies)
-        let runtime_impl_path = format!("{}::runtime::Runnable", actor_module);
+        let runtime_impl_path = format!("{actor_module}::runtime::Runnable");
         let _runtime_idx = self.add_generated_type(&runtime_impl_path, &all_deps);
 
         Ok(())
+    }
+
+    /// Analyze component structure and determine required imports
+    pub fn analyze_component_imports(&mut self, module_path: &str, component: &Component) {
+        // Component always implements Components trait
+        self.add_dependency_by_path(module_path, "bloxide_tokio::components::Components");
+
+        // If there are any handles, add TokioMessageHandle import once
+        if !component.message_handles.handles.is_empty() {
+            self.add_dependency_by_path(module_path, "bloxide_tokio::TokioMessageHandle");
+        }
+
+        // If there are any receivers, add Runtime types once
+        if !component.message_receivers.receivers.is_empty() {
+            self.add_dependency_by_path(module_path, "bloxide_tokio::components::Runtime");
+            self.add_dependency_by_path(module_path, "bloxide_tokio::messaging::MessageSender");
+            self.add_dependency_by_path(module_path, "bloxide_tokio::TokioRuntime");
+        }
+
+        // Analyze individual message handles for external message types
+        for handle in &component.message_handles.handles {
+            self.extract_and_add_type_imports(module_path, &handle.message_type);
+        }
+
+        // Analyze individual message receivers for external message types
+        for receiver in &component.message_receivers.receivers {
+            self.extract_and_add_type_imports(module_path, &receiver.message_type);
+        }
+
+        // Check if message set exists - might need MessageSet import in some contexts
+        if component.message_set.is_some() {
+            self.add_dependency_by_path(module_path, "bloxide_tokio::messaging::MessageSet");
+        }
+    }
+
+    /// Extract and add imports for all module paths found in a type string
+    /// Handles complex types like "module::Type<other::Inner, third::Type>"
+    /// Also handles simple custom types like "CustomArgs"
+    fn extract_and_add_type_imports(&mut self, module_path: &str, type_str: &str) {
+        // Simple approach: split on common delimiters and check each part
+        let delimiters = ['<', '>', ',', ' ', '(', ')', '[', ']'];
+
+        // Split the type string on delimiters and check each part
+        let parts: Vec<&str> = type_str
+            .split(&delimiters[..])
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        for part in parts {
+            // Skip common Rust types and keywords
+            if PRELUDE_TYPES.contains(&part) {
+                continue;
+            }
+
+            if part.contains("::") {
+                // This is a module path like "bloxide_tokio::TokioRuntime"
+                if part
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == ':')
+                {
+                    // Extract the module path (everything except the last component)
+                    if let Some((crate_path, _type_name)) = part.rsplit_once("::") {
+                        self.add_dependency_by_path(module_path, crate_path);
+                    }
+                }
+            } else if part.chars().all(|c| c.is_alphanumeric() || c == '_')
+                && part.chars().next().unwrap_or('a').is_uppercase()
+            {
+                // Check if this is a known bloxide type that should come from bloxide_tokio
+                if matches!(part, "StandardPayload" | "StandardMessage" | "Message") {
+                    self.add_dependency_by_path(module_path, "bloxide_tokio::messaging");
+                } else {
+                    // This is a simple type name like "CustomArgs" that starts with uppercase
+                    // These are likely custom types defined in the messaging module
+                    let actor_module = module_path.split("::").next().unwrap_or("");
+                    if !actor_module.is_empty() {
+                        let custom_type_path =
+                            format!("crate::{}::messaging::{}", actor_module, part);
+                        self.add_dependency_by_path(module_path, &custom_type_path);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Analyze states structure and determine required imports
+    pub fn analyze_states_imports(
+        &mut self,
+        module_path: &str,
+        states: &States,
+        has_message_set: bool,
+    ) {
+        // States always need state machine types
+        [
+            "bloxide_tokio::state_machine::StateMachine",
+            "bloxide_tokio::state_machine::State",
+            "bloxide_tokio::state_machine::StateEnum",
+            "bloxide_tokio::state_machine::Transition",
+            "bloxide_tokio::components::Components",
+        ]
+        .iter()
+        .for_each(|dep| self.add_dependency_by_path(module_path, dep));
+
+        // If message set exists, need MessageSet import
+        if has_message_set {
+            self.add_dependency_by_path(module_path, "bloxide_tokio::messaging::MessageSet");
+        }
+
+        // Analyze individual states for any special dependencies
+        for state in &states.states {
+            // Check if state has variants that reference external types
+            if let Some(variants) = &state.variants {
+                for variant in variants {
+                    for arg in &variant.args {
+                        let arg_str = arg.as_ref();
+                        if arg_str.contains("::") && arg_str.starts_with("bloxide") {
+                            if let Some((crate_path, _type_name)) = arg_str.rsplit_once("::") {
+                                self.add_dependency_by_path(module_path, crate_path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Analyze the state enum variants
+        for variant in &states.state_enum.get().variants {
+            for arg in &variant.args {
+                let arg_str = arg.as_ref();
+                if arg_str.contains("::") && arg_str.starts_with("bloxide") {
+                    if let Some((crate_path, _type_name)) = arg_str.rsplit_once("::") {
+                        self.add_dependency_by_path(module_path, crate_path);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Analyze message set structure and determine required imports
+    pub fn analyze_message_set_imports(&mut self, module_path: &str, message_set: &MessageSet) {
+        // Message sets always need these core types
+        self.add_dependency_by_path(module_path, "bloxide_tokio::messaging::Message");
+        self.add_dependency_by_path(module_path, "bloxide_tokio::messaging::MessageSet");
+
+        // Analyze custom types - they might need additional imports based on their variants
+        for custom_type in &message_set.custom_types {
+            // Check if custom type variants reference external types
+            for variant in &custom_type.variants {
+                for arg in &variant.args {
+                    let arg_str = arg.as_ref();
+                    // If the arg contains "::" it's likely an external type reference
+                    if arg_str.contains("::") && arg_str.starts_with("bloxide") {
+                        // Extract and add the import (this could be made more sophisticated)
+                        if let Some((crate_path, _type_name)) = arg_str.rsplit_once("::") {
+                            self.add_dependency_by_path(module_path, crate_path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Analyze extended state structure and determine required imports
+    pub fn analyze_ext_state_imports(
+        &mut self,
+        module_path: &str,
+        ext_state: &crate::blox::ext_state::ExtState,
+    ) {
+        // Extended state always needs ExtendedState trait
+        self.add_dependency_by_path(module_path, "bloxide_tokio::state_machine::ExtendedState");
+
+        // Analyze field types to see if they need additional imports
+        for field in ext_state.fields() {
+            let field_type = field.ty().as_ref();
+            // Check for custom types that might need imports
+            if field_type.contains("::") && field_type.starts_with("bloxide") {
+                if let Some((crate_path, _type_name)) = field_type.rsplit_once("::") {
+                    self.add_dependency_by_path(module_path, crate_path);
+                }
+            }
+        }
+    }
+
+    /// Analyze runtime requirements and determine required imports
+    pub fn analyze_runtime_imports(&mut self, module_path: &str, _actor: &Actor) {
+        // Runtime always needs these core types
+        self.add_dependency_by_path(module_path, "bloxide_tokio::components::Runnable");
+        self.add_dependency_by_path(module_path, "bloxide_tokio::runtime::*");
+        self.add_dependency_by_path(module_path, "bloxide_tokio::std_exports::*");
+    }
+
+    /// Analyze all module types for an actor and determine their imports
+    pub fn analyze_all_module_imports(&mut self, actor: &Actor) {
+        let actor_module = actor.ident.to_lowercase();
+
+        // Analyze component imports
+        let component_module_path = format!("{actor_module}::component");
+        self.analyze_component_imports(&component_module_path, &actor.component);
+
+        // Analyze states imports
+        let states_module_path = format!("{actor_module}::states");
+        self.analyze_states_imports(
+            &states_module_path,
+            &actor.component.states,
+            actor.component.message_set.is_some(),
+        );
+
+        // Analyze message set imports if it exists
+        if let Some(message_set) = &actor.component.message_set {
+            let messaging_module_path = format!("{actor_module}::messaging");
+            self.analyze_message_set_imports(&messaging_module_path, message_set);
+        }
+
+        // Analyze extended state imports
+        let ext_state_module_path = format!("{actor_module}::ext_state");
+        self.analyze_ext_state_imports(&ext_state_module_path, &actor.component.ext_state);
+
+        // Analyze runtime imports
+        let runtime_module_path = format!("{actor_module}::runtime");
+        self.analyze_runtime_imports(&runtime_module_path, actor);
+    }
+
+    /// Analyze generated code and automatically detect required imports
+    pub fn analyze_and_add_imports(&mut self, module_path: &str, generated_code: &str) {
+        let imports = self.extract_required_imports(generated_code);
+        for import in imports {
+            self.add_dependency_by_path(module_path, &import);
+        }
+    }
+
+    /// Extract required imports by analyzing the generated code for type usage
+    pub fn extract_required_imports(&self, code: &str) -> Vec<String> {
+        let mut imports = Vec::new();
+
+        // Map of type patterns to their import paths
+        let type_mappings = [
+            // Core bloxide types
+            ("Components", "bloxide_tokio::components::Components"),
+            ("TokioMessageHandle", "bloxide_tokio::TokioMessageHandle"),
+            ("TokioRuntime", "bloxide_tokio::TokioRuntime"),
+            ("Runtime", "bloxide_tokio::components::Runtime"),
+            ("MessageSender", "bloxide_tokio::messaging::MessageSender"),
+            ("MessageSet", "bloxide_tokio::messaging::MessageSet"),
+            ("Message", "bloxide_tokio::messaging::Message"),
+            // State machine types
+            ("StateMachine", "bloxide_tokio::state_machine::StateMachine"),
+            ("State", "bloxide_tokio::state_machine::State"),
+            ("StateEnum", "bloxide_tokio::state_machine::StateEnum"),
+            ("Transition", "bloxide_tokio::state_machine::Transition"),
+            (
+                "ExtendedState",
+                "bloxide_tokio::state_machine::ExtendedState",
+            ),
+            // Runtime types
+            ("Runnable", "bloxide_tokio::components::Runnable"),
+        ];
+
+        for (type_name, import_path) in &type_mappings {
+            if self.code_uses_type(code, type_name) {
+                imports.push(import_path.to_string());
+            }
+        }
+
+        imports
+    }
+
+    /// Check if the code uses a specific type
+    pub fn code_uses_type(&self, code: &str, type_name: &str) -> bool {
+        // Look for various usage patterns
+        let patterns = [
+            format!("impl {}", type_name), // trait implementations
+            format!(": {}", type_name),    // type annotations
+            format!("<{}>", type_name),    // generic parameters
+            format!("{}::", type_name),    // qualified paths
+            format!("{}<", type_name),     // generic type usage
+            format!("as {}", type_name),   // type casts
+        ];
+
+        patterns.iter().any(|pattern| code.contains(pattern))
     }
 }
 
@@ -725,15 +1068,14 @@ mod tests {
             .node_indices()
             .filter(|&idx| {
                 // Include nodes that have containment edges (either incoming or outgoing)
-                let has_containment = graph
+                graph
                     .graph
                     .edges(idx)
                     .any(|e| *e.weight() == Relation::Contains)
                     || graph
                         .graph
                         .edges_directed(idx, Incoming)
-                        .any(|e| *e.weight() == Relation::Contains);
-                has_containment
+                        .any(|e| *e.weight() == Relation::Contains)
             })
             .collect();
 
@@ -1170,7 +1512,7 @@ mod tests {
 
         // Should pass validation
         assert!(validate_module_hierarchy(&graph).is_ok());
-        assert!(!graph.is_cyclic());
+        assert!(!graph.is_cyclic(), "Module hierarchy should be acyclic");
 
         let roots = find_hierarchy_roots(&graph);
         assert_eq!(roots.len(), 1);
@@ -1307,55 +1649,30 @@ mod tests {
     }
 
     #[test]
-    fn test_auto_module_connection() {
-        let mut graph = RustGraph::new();
+    fn test_unified_dependency_system() {
+        let mut graph = CodeGenGraph::new();
+        let module_path = "session::component";
 
-        // Create a module hierarchy
-        graph.add_type_from_path("utils::db::Connection");
-        graph.add_type_from_path("utils::validation::EmailValidator");
+        // Test adding external dependencies using the new unified system
+        graph.add_dependency_by_path(module_path, "bloxide_tokio::components::Components");
+        graph.add_dependency_by_path(module_path, "bloxide_tokio::TokioMessageHandle");
+        graph.add_dependency_by_path(module_path, "crate::session::messaging::CustomArgs");
 
-        // Find the utils module
-        let utils_modules = graph.find_by_name("utils");
-        assert_eq!(
-            utils_modules.len(),
-            1,
-            "Should find exactly one utils module"
-        );
-        let utils_idx = utils_modules[0].index;
+        // Get the module and check its imports
+        let module_idx = graph
+            .graph
+            .find_module_by_path_hierarchical(module_path)
+            .expect("Module should exist");
+        let imports = graph.get_imports_for_module(module_idx);
 
-        // Get all nodes connected to utils with Contains relationship
-        let connected_nodes = graph.find_connected_nodes(utils_idx);
-        let children: Vec<_> = connected_nodes
-            .iter()
-            .filter(|(_, _, relation)| *relation == Relation::Contains)
-            .collect();
+        // Should generate proper import statements
+        assert!(imports.iter().any(|imp| imp.contains("Components")));
+        assert!(imports.iter().any(|imp| imp.contains("TokioMessageHandle")));
+        assert!(imports.iter().any(|imp| imp.contains("CustomArgs")));
 
-        // Verify utils has exactly 2 children
-        assert_eq!(
-            children.len(),
-            2,
-            "utils module should have exactly 2 children"
-        );
-
-        // Get the names of the children
-        let child_names: Vec<String> = children.iter().map(|(_, node, _)| node.name()).collect();
-
-        // Verify the children are "db" and "validation"
-        assert!(
-            child_names.contains(&"db".to_string()),
-            "utils should contain db module"
-        );
-        assert!(
-            child_names.contains(&"validation".to_string()),
-            "utils should contain validation module"
-        );
-
-        // Verify both children are modules
-        for (_, node, _) in &children {
-            assert!(
-                matches!(node, Node::Module(_)),
-                "Children should be Module nodes"
-            );
+        println!("✅ Unified dependency system working:");
+        for import in imports {
+            println!("  {}", import);
         }
     }
 }

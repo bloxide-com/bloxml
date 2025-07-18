@@ -1,8 +1,34 @@
 use crate::blox::actor::Actor;
-use crate::graph::CodeGenerationGraph;
+use crate::graph::CodeGenGraph;
 use std::error::Error;
 
-pub fn generate_runtime(actor: &Actor) -> Result<String, Box<dyn Error>> {
+/// Generate runtime code with graph-based import resolution
+pub fn generate_runtime(actor: &Actor, graph: &CodeGenGraph) -> Result<String, Box<dyn Error>> {
+    let actor_name = &actor.ident;
+    let actor_module = actor.ident.to_lowercase();
+
+    // Get imports from graph for the runtime module
+    let runtime_module_path = format!("{actor_module}::runtime");
+    let imports = if let Some(runtime_module_idx) = graph
+        .graph
+        .find_module_by_path_hierarchical(&runtime_module_path)
+    {
+        graph.get_imports_for_module(runtime_module_idx)
+    } else {
+        // Fallback to hardcoded imports
+        vec![
+            "use bloxide_tokio::components::{Runnable, *};".to_string(),
+            "use bloxide_tokio::runtime::*;".to_string(),
+            "use bloxide_tokio::std_exports::*;".to_string(),
+        ]
+    };
+
+    let imports_section = if imports.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", imports.join("\n"))
+    };
+
     let message_set_name = actor
         .component
         .message_set
@@ -38,20 +64,14 @@ pub fn generate_runtime(actor: &Actor) -> Result<String, Box<dyn Error>> {
             variant_name = variant.ident
         ));
     }
-    let actor_name = actor.ident.clone();
+
     let states = &actor.component.states;
     let first_state = &states.states[0];
     let second_state = states.states.get(1).unwrap_or(&states.states[0]);
     let state_enum_name = &states.state_enum.get().ident;
 
     let content = format!(
-        r#"use bloxide_tokio::{{
-    components::{{Runnable, *}},
-    runtime::*,
-    std_exports::*,
-}};
-
-use super::{{
+        r#"{imports_section}use super::{{
     component::{actor_name}Components,
     states::{{
         {first_state_lower}::{first_state},
@@ -84,13 +104,4 @@ impl Runnable<{actor_name}Components> for Blox<{actor_name}Components> {{
     );
 
     Ok(content)
-}
-
-/// Generate runtime code with graph-based import resolution
-pub fn generate_runtime_with_graph(
-    actor: &Actor,
-    _graph: &CodeGenerationGraph,
-) -> Result<String, Box<dyn Error>> {
-    // For now, use the basic generator - import resolution will be enhanced later
-    generate_runtime(actor)
 }

@@ -1,4 +1,5 @@
-use crate::graph::CodeGenerationGraph;
+use crate::blox::actor::Actor;
+use crate::graph::CodeGenGraph;
 use crate::{blox::enums::EnumDef, blox::message_set::MessageSet};
 use std::error::Error;
 
@@ -9,8 +10,31 @@ use std::error::Error;
 ///
 /// # Returns
 /// A `Result` containing the generated Rust code as a `String` or an error
-pub fn generate_message_set(msg_set: &MessageSet) -> Result<String, Box<dyn Error>> {
+pub fn generate_message_set(
+    msg_set: &MessageSet,
+    actor: &Actor,
+    graph: &mut CodeGenGraph,
+) -> Result<String, Box<dyn Error>> {
     let enum_def = msg_set.get();
+    let actor_module = actor.ident.to_lowercase();
+
+    // Get imports from graph for the messaging module
+    let messaging_module_path = format!("{actor_module}::messaging");
+    let imports = if let Some(messaging_module_idx) = graph
+        .graph
+        .find_module_by_path_hierarchical(&messaging_module_path)
+    {
+        graph.get_imports_for_module(messaging_module_idx)
+    } else {
+        // Fallback to hardcoded imports
+        vec!["use bloxide_tokio::messaging::{Message, MessageSet};".to_string()]
+    };
+
+    let imports_section = if imports.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", imports.join("\n"))
+    };
 
     let mut output = format!(
         r#"//! # {ident} Message Module
@@ -20,8 +44,7 @@ pub fn generate_message_set(msg_set: &MessageSet) -> Result<String, Box<dyn Erro
 //!
 //! ## Message Structure
 //! - `MessageSet` - The top-level message set enum that wraps all message types
-
-use bloxide_tokio::messaging::{{Message, MessageSet}};
+{imports_section}
 
 {enum_definition}
 
@@ -121,25 +144,13 @@ pub enum {enum_name} {{
     ))
 }
 
-/// Generates Rust code for a message set with graph-based import resolution
-pub fn generate_message_set_with_graph(
-    msg_set: &MessageSet,
-    _graph: &CodeGenerationGraph,
-) -> Result<String, Box<dyn Error>> {
-    // Generate basic message set content
-    let basic_content = generate_message_set(msg_set)?;
-
-    // Try to find the messaging module in the graph for import resolution
-    // For now, return the basic content since the import logic will be enhanced later
-    Ok(basic_content)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         Link,
         blox::enums::{EnumDef, EnumVariant},
+        tests::create_test_actor,
     };
 
     #[test]
@@ -165,7 +176,9 @@ mod tests {
 
         let message_set = MessageSet::with_custom_types(enum_def, vec![custom_type]);
 
-        let result = generate_message_set(&message_set).expect("Failed to generate message set");
+        let mut graph = CodeGenGraph::new();
+        let result = generate_message_set(&message_set, &create_test_actor(), &mut graph)
+            .expect("Failed to generate message set");
 
         assert!(result.contains("pub enum TestMessageSet"));
         assert!(result.contains("Variant1(Message<SomeType>)"));

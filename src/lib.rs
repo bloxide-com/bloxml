@@ -23,7 +23,7 @@ pub(crate) mod tests {
         state::{State, StateEnum, States},
     };
     use pretty_assertions::assert_eq;
-    use serde_json;
+
     use std::fs;
 
     const TEST_OUTPUT_DIR: &str = "tests/output";
@@ -61,9 +61,9 @@ pub(crate) mod tests {
             "ActorExtState",
             vec![Field::new("field1", "String"), Field::new("field2", "i32")],
             vec![
-                Method::new("get_custom_value", &vec![], "String", "self.custom_value"),
-                Method::new("get_custom_value2", &vec![], "i32", "self.custom_value2"),
-                Method::new("hello_world", &vec![], "", r#"println!("Hello, world!")"#),
+                Method::new("get_custom_value", &[], "String", "self.custom_value"),
+                Method::new("get_custom_value2", &[], "i32", "self.custom_value2"),
+                Method::new("hello_world", &[], "", r#"println!("Hello, world!")"#),
             ],
             InitArgs::new("ActorInitArgs", vec![Field::new("field1", "String")]),
         )

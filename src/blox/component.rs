@@ -4,7 +4,7 @@ use super::{
     message_set::MessageSet,
     state::States,
 };
-use crate::create::ToRust;
+use crate::{create::ToRust, graph::CodeGenGraph};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
@@ -41,7 +41,7 @@ impl Component {
 }
 
 impl ToRust for Component {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, graph: &mut CodeGenGraph) -> String {
         let actor_name = &self.ident.split("Components").next().unwrap();
         let component_name = &self.ident;
         let ext_state_name = &self.ext_state.ident();
@@ -55,28 +55,11 @@ impl ToRust for Component {
         let handles_ident = &self.message_handles.ident;
         let receivers_ident = &self.message_receivers.ident;
 
-        let handles = self.message_handles.to_rust();
-        let receivers = self.message_receivers.to_rust();
+        let handles = self.message_handles.to_rust(graph);
+        let receivers = self.message_receivers.to_rust(graph);
 
         format!(
-            r#"//! # {actor_name} Components
-//!
-//! This module defines the component structure for the {actor_name} Blox.
-//! It specifies the states, message types, extended state, and communication
-//! channels that make up the {actor_name} component.
-
-use super::{{
-    ext_state::{ext_state_name},
-    messaging::{message_set_name},
-    states::{states_name},
-}};
-use bloxide_tokio::{{
-    components::{{Components, Runtime}},
-    TokioMessageHandle,
-    messaging::{{Message, MessageSet, MessageSender, StandardPayload}},
-    TokioRuntime,
-    }};
-
+            r#"
 /// Defines the structure of the {actor_name} Blox component
 pub struct {component_name};
 
@@ -122,14 +105,12 @@ mod tests {
             None,
             ExtState::default(),
         );
-        let rust_code = component.to_rust();
+        let mut graph = crate::graph::CodeGenGraph::new();
+        let rust_code = component.to_rust(&mut graph);
 
         assert!(rust_code.contains("pub struct ActorHandles"));
         assert!(rust_code.contains("pub struct ActorReceivers"));
-        assert!(
-            rust_code
-                .contains("pub test_handle: TokioMessageHandle<TestMessage>")
-        );
-        assert!(rust_code.contains("pub test_rx: <<bloxide_tokio::TokioRuntime as Runtime>::MessageHandle<TestMessage> as MessageSender>::ReceiverType"));
+        assert!(rust_code.contains("pub test_handle: TokioMessageHandle<TestMessage>"));
+        assert!(rust_code.contains("pub test_rx: <<TokioRuntime as Runtime>::MessageHandle<TestMessage> as MessageSender>::ReceiverType"));
     }
 }

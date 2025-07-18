@@ -7,10 +7,10 @@ use std::{
 };
 
 use super::{
-    ext_state_gen, generate_component_with_graph,
-    generate_message_set_with_graph, runtime_gen::generate_runtime_with_graph, state_gen,
+    ext_state_gen, generate_component_with_structural_analysis, generate_message_set,
+    runtime_gen::generate_runtime, state_gen,
 };
-use crate::graph::CodeGenerationGraph;
+use crate::graph::CodeGenGraph;
 
 const MSG_MOD: &str = "messaging.rs";
 const EXT_STATE_MOD: &str = "ext_state.rs";
@@ -27,7 +27,7 @@ fn create_module_dir(path: &Path) -> Result<(), String> {
 fn create_states_module_with_graph(
     path: &Path,
     actor: &Actor,
-    graph: &CodeGenerationGraph,
+    graph: &CodeGenGraph,
 ) -> Result<(), Box<dyn Error>> {
     create_module_dir(path)?;
     create_state_files_with_graph(path, actor, graph)?;
@@ -42,7 +42,7 @@ fn create_states_module_with_graph(
 
     let mod_rs = path.join("mod.rs");
     let mut mod_rs =
-        File::create(&mod_rs).map_err(|e| format!("Error creating states/mod.rs: {}", e))?;
+        File::create(&mod_rs).map_err(|e| format!("Error creating states/mod.rs: {e}"))?;
 
     mod_rs
         .write_all(states_mod_rs.as_bytes())
@@ -56,7 +56,7 @@ fn create_states_module_with_graph(
 fn create_state_files_with_graph(
     path: &Path,
     actor: &Actor,
-    graph: &CodeGenerationGraph,
+    graph: &CodeGenGraph,
 ) -> Result<(), Box<dyn Error>> {
     let states = &actor.component.states;
     let state_files = states
@@ -96,7 +96,7 @@ fn create_root_mod_rs(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Erro
 
     let mod_rs_content = modules
         .iter()
-        .map(|mod_name| format!("pub mod {};", mod_name))
+        .map(|mod_name| format!("pub mod {mod_name};"))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -108,8 +108,13 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
     actor.component.states.validate()?;
 
     // Create and populate the dependency graph once for the entire generation process
-    let mut graph = CodeGenerationGraph::new();
+    let mut graph = CodeGenGraph::new();
+
+    // First populate the basic graph structure
     graph.populate_from_actor(actor)?;
+
+    // Then analyze all modules using structural analysis to determine imports
+    graph.analyze_all_module_imports(actor);
 
     let mod_path = actor.create_mod_path();
     create_module_dir(&mod_path)?;
@@ -120,12 +125,12 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
 
     // Generate messaging module if message set exists
     if let Some(message_set) = &actor.component.message_set {
-        let message_module_content = generate_message_set_with_graph(message_set, &graph)?;
+        let message_module_content = generate_message_set(message_set, actor, &mut graph)?;
         fs::write(mod_path.join("messaging.rs"), message_module_content)?;
     }
 
-    // Generate component.rs using the graph for import resolution
-    let component_content = generate_component_with_graph(actor, &graph)?;
+    // Generate component.rs using structural analysis for import detection
+    let component_content = generate_component_with_structural_analysis(actor, &mut graph)?;
     fs::write(mod_path.join(COMPONENT_MOD), component_content)?;
 
     // Generate ext_state.rs
@@ -139,11 +144,11 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
 {ext_state}
 "#,
         ident = actor.ident,
-        ext_state = ext_state_gen::generate_ext_state(&actor.component.ext_state),
+        ext_state = ext_state_gen::generate_ext_state(&actor.component.ext_state, &mut graph),
     );
     fs::write(mod_path.join(EXT_STATE_MOD), placeholder_ext_state)?;
 
-    let runtime_content = generate_runtime_with_graph(actor, &graph)?;
+    let runtime_content = generate_runtime(actor, &graph)?;
     fs::write(mod_path.join(RUNTIME_MOD), runtime_content)?;
 
     let mods = {

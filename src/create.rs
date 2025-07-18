@@ -10,6 +10,8 @@ pub use file_gen::*;
 pub use message_gen::*;
 pub use state_gen::*;
 
+use crate::graph::CodeGenGraph;
+
 pub trait ToRust {
-    fn to_rust(&self) -> String;
+    fn to_rust(&self, graph: &mut CodeGenGraph) -> String;
 }
