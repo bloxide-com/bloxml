@@ -164,12 +164,11 @@ mod tests {
         // Should always detect Components trait usage (every component implements it)
         assert!(
             imports.iter().any(|imp| imp.contains("Components")),
-            "Should always detect Components trait usage. Found imports: {:?}",
-            imports
+            "Should always detect Components trait usage. Found imports: {imports:?}"
         );
 
-        println!("Structural analysis detected imports: {:#?}", imports);
-        println!("Generated code:\n{}", generated_code);
+        println!("Structural analysis detected imports: {imports:#?}");
+        println!("Generated code:\n{generated_code}");
     }
 
     #[test]
@@ -224,8 +223,8 @@ mod tests {
             .unwrap();
         let text_imports = text_graph.get_imports_for_module(text_component_module_idx);
 
-        println!("Structural analysis imports: {:#?}", structural_imports);
-        println!("Text analysis imports: {:#?}", text_imports);
+        println!("Structural analysis imports: {structural_imports:#?}");
+        println!("Text analysis imports: {text_imports:#?}");
 
         // Both should detect Components
         assert!(
@@ -274,8 +273,7 @@ mod tests {
             let result = graph.code_uses_type(code, type_name);
             assert_eq!(
                 result, expected,
-                "Expected {} for type '{}' in code: '{}'",
-                expected, type_name, code
+                "Expected {expected} for type '{type_name}' in code: '{code}'"
             );
         }
     }

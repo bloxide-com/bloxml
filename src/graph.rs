@@ -410,7 +410,7 @@ impl CodeGenGraph {
         for (connected_idx, connected_node, relation) in connected {
             if matches!(relation, Relation::Uses) {
                 let import_statement =
-                    self.generate_import_statement(&connected_node, connected_idx);
+                    self.generate_import_statement(connected_node, connected_idx);
                 imports.push(import_statement);
             }
         }
@@ -428,20 +428,20 @@ impl CodeGenGraph {
             Node::Module(_) => {
                 // For module imports (glob imports), check if it ends with runtime or similar
                 if node_path.contains("runtime") || node_path.contains("std_exports") {
-                    format!("use {}::*;", node_path)
+                    format!("use {node_path}::*;")
                 } else {
-                    format!("use {};", node_path)
+                    format!("use {node_path};")
                 }
             }
             Node::Type(_) | Node::Trait(_) => {
                 // For specific types/traits
-                format!("use {};", node_path)
+                format!("use {node_path};")
             }
             Node::Function(_) => {
-                format!("use {};", node_path)
+                format!("use {node_path};")
             }
             Node::Crate(_) => {
-                format!("use {};", node_path)
+                format!("use {node_path};")
             }
         }
     }
@@ -822,7 +822,7 @@ impl CodeGenGraph {
                     let actor_module = module_path.split("::").next().unwrap_or("");
                     if !actor_module.is_empty() {
                         let custom_type_path =
-                            format!("crate::{}::messaging::{}", actor_module, part);
+                            format!("crate::{actor_module}::messaging::{part}");
                         self.add_dependency_by_path(module_path, &custom_type_path);
                     }
                 }
@@ -1015,12 +1015,12 @@ impl CodeGenGraph {
     pub fn code_uses_type(&self, code: &str, type_name: &str) -> bool {
         // Look for various usage patterns
         let patterns = [
-            format!("impl {}", type_name), // trait implementations
-            format!(": {}", type_name),    // type annotations
-            format!("<{}>", type_name),    // generic parameters
-            format!("{}::", type_name),    // qualified paths
-            format!("{}<", type_name),     // generic type usage
-            format!("as {}", type_name),   // type casts
+            format!("impl {type_name}"), // trait implementations
+            format!(": {type_name}"),    // type annotations
+            format!("<{type_name}>"),    // generic parameters
+            format!("{type_name}::"),    // qualified paths
+            format!("{type_name}<"),     // generic type usage
+            format!("as {type_name}"),   // type casts
         ];
 
         patterns.iter().any(|pattern| code.contains(pattern))
@@ -1672,7 +1672,7 @@ mod tests {
 
         println!("✅ Unified dependency system working:");
         for import in imports {
-            println!("  {}", import);
+            println!("  {import}");
         }
     }
 }
