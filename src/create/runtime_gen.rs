@@ -13,7 +13,9 @@ pub fn generate_runtime(actor: &Actor, graph: &CodeGenGraph) -> Result<String, B
         .graph
         .find_module_by_path_hierarchical(&runtime_module_path)
     {
-        graph.get_imports_for_module(runtime_module_idx)
+        graph
+            .get_imports_for_module(runtime_module_idx)
+            .collect::<Vec<_>>()
     } else {
         // Fallback to hardcoded imports
         vec![

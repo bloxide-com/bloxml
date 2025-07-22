@@ -24,7 +24,9 @@ pub fn generate_message_set(
         .graph
         .find_module_by_path_hierarchical(&messaging_module_path)
     {
-        graph.get_imports_for_module(messaging_module_idx)
+        graph
+            .get_imports_for_module(messaging_module_idx)
+            .collect::<Vec<_>>()
     } else {
         // Fallback to hardcoded imports
         vec!["use bloxide_tokio::messaging::{Message, MessageSet};".to_string()]
@@ -33,7 +35,7 @@ pub fn generate_message_set(
     let imports_section = if imports.is_empty() {
         String::new()
     } else {
-        format!("{}\n\n", imports.join("\n"))
+        format!("{};\n\n", imports.join(";\n"))
     };
 
     let mut output = format!(

@@ -179,7 +179,9 @@ pub fn generate_inner_states_with_graph(
         .graph
         .find_module_by_path_hierarchical(&state_module_path)
     {
-        graph.get_imports_for_module(state_module_idx)
+        graph
+            .get_imports_for_module(state_module_idx)
+            .collect::<Vec<_>>()
     } else {
         // Fallback to hardcoded imports if graph lookup fails
         vec![
@@ -238,7 +240,9 @@ pub fn generate_state_enum_impl_with_graph(
         .graph
         .find_module_by_path_hierarchical(&state_module_path)
     {
-        graph.get_imports_for_module(state_module_idx)
+        graph
+            .get_imports_for_module(state_module_idx)
+            .collect::<Vec<_>>()
     } else {
         // Fallback to hardcoded imports
         vec![
@@ -381,7 +385,9 @@ pub fn generate_inner_states_with_structural_analysis(
         .graph
         .find_module_by_path_hierarchical(&state_module_path)
     {
-        graph.get_imports_for_module(state_module_idx)
+        graph
+            .get_imports_for_module(state_module_idx)
+            .collect::<Vec<_>>()
     } else {
         // Fallback if module not found
         vec![]
@@ -435,7 +441,9 @@ pub fn generate_state_enum_impl_with_structural_analysis(
         .graph
         .find_module_by_path_hierarchical(&state_module_path)
     {
-        graph.get_imports_for_module(state_module_idx)
+        graph
+            .get_imports_for_module(state_module_idx)
+            .collect::<Vec<_>>()
     } else {
         // Fallback to hardcoded imports
         vec![

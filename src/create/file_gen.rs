@@ -7,7 +7,7 @@ use std::{
 };
 
 use super::{
-    ext_state_gen, generate_component_with_structural_analysis, generate_message_set,
+    ext_state_gen, generate_component_with_graph, generate_message_set,
     runtime_gen::generate_runtime, state_gen,
 };
 use crate::graph::CodeGenGraph;
@@ -110,11 +110,8 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
     // Create and populate the dependency graph once for the entire generation process
     let mut graph = CodeGenGraph::new();
 
-    // First populate the basic graph structure
-    graph.populate_from_actor(actor)?;
-
-    // Then analyze all modules using structural analysis to determine imports
-    graph.analyze_all_module_imports(actor);
+    // Use the proper new architecture
+    graph.analyze_actor(actor)?;
 
     let mod_path = actor.create_mod_path();
     create_module_dir(&mod_path)?;
@@ -129,8 +126,8 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
         fs::write(mod_path.join("messaging.rs"), message_module_content)?;
     }
 
-    // Generate component.rs using structural analysis for import detection
-    let component_content = generate_component_with_structural_analysis(actor, &mut graph)?;
+    // Generate component.rs using the pre-populated graph
+    let component_content = generate_component_with_graph(actor, &mut graph)?;
     fs::write(mod_path.join(COMPONENT_MOD), component_content)?;
 
     // Generate ext_state.rs
