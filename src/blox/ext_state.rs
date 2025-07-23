@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Method, create::ToRust, field::Field};
+use crate::{Method, create::ToRust, field::Field, graph::CodeGenGraph};
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Default, Clone)]
 pub struct InitArgs {
@@ -62,11 +62,11 @@ impl ExtState {
 }
 
 impl ToRust for ExtState {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, graph: &mut CodeGenGraph) -> String {
         let fields = self
             .fields
             .iter()
-            .map(ToRust::to_rust)
+            .map(|f| f.to_rust(graph))
             .collect::<Vec<_>>()
             .join(",\n\t");
 
@@ -80,7 +80,7 @@ impl ToRust for ExtState {
         let methods = self
             .methods
             .iter()
-            .map(ToRust::to_rust)
+            .map(|m| m.to_rust(graph))
             .collect::<Vec<_>>()
             .join("\n\t");
 
@@ -153,9 +153,9 @@ pub(crate) mod tests {
             "ActorExtState",
             vec![Field::new("field1", "String"), Field::new("field2", "i32")],
             vec![
-                Method::new("get_custom_value", &vec![], "String", "self.custom_value"),
-                Method::new("get_custom_value2", &vec![], "i32", "self.custom_value2"),
-                Method::new("hello_world", &vec![], "", r#"println!("Hello, world!")"#),
+                Method::new("get_custom_value", &[], "String", "self.custom_value"),
+                Method::new("get_custom_value2", &[], "i32", "self.custom_value2"),
+                Method::new("hello_world", &[], "", r#"println!("Hello, world!")"#),
             ],
             InitArgs::new("ActorInitArgs", vec![Field::new("field1", "String")]),
         )

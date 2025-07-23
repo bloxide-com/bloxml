@@ -7,9 +7,10 @@ use std::{
 };
 
 use super::{
-    ext_state_gen, generate_component, generate_message_set, generate_state_enum_impl,
+    ext_state_gen, generate_component_with_graph, generate_message_set,
     runtime_gen::generate_runtime, state_gen,
 };
+use crate::graph::CodeGenGraph;
 
 const MSG_MOD: &str = "messaging.rs";
 const EXT_STATE_MOD: &str = "ext_state.rs";
@@ -23,9 +24,13 @@ fn create_module_dir(path: &Path) -> Result<(), String> {
         .map_err(|e| format!("Error creating directory {}: {e}", path.display()))
 }
 
-fn create_states_module(path: &Path, actor: &Actor) -> Result<(), Box<dyn Error>> {
+fn create_states_module_with_graph(
+    path: &Path,
+    actor: &Actor,
+    graph: &CodeGenGraph,
+) -> Result<(), Box<dyn Error>> {
     create_module_dir(path)?;
-    create_state_files(path, actor)?;
+    create_state_files_with_graph(path, actor, graph)?;
 
     let states_mod_rs = actor
         .component
@@ -37,18 +42,22 @@ fn create_states_module(path: &Path, actor: &Actor) -> Result<(), Box<dyn Error>
 
     let mod_rs = path.join("mod.rs");
     let mut mod_rs =
-        File::create(&mod_rs).map_err(|e| format!("Error creating states/mod.rs: {}", e))?;
+        File::create(&mod_rs).map_err(|e| format!("Error creating states/mod.rs: {e}"))?;
 
     mod_rs
         .write_all(states_mod_rs.as_bytes())
         .map_err(|e| format!("Error writing states/mod.rs: {e}"))?;
 
     mod_rs
-        .write_all(generate_state_enum_impl(actor)?.as_bytes())
+        .write_all(state_gen::generate_state_enum_impl_with_graph(actor, graph)?.as_bytes())
         .map_err(|e| format!("Error writing states/mod.rs: {e}").into())
 }
 
-fn create_state_files(path: &Path, actor: &Actor) -> Result<(), Box<dyn Error>> {
+fn create_state_files_with_graph(
+    path: &Path,
+    actor: &Actor,
+    graph: &CodeGenGraph,
+) -> Result<(), Box<dyn Error>> {
     let states = &actor.component.states;
     let state_files = states
         .states
@@ -63,7 +72,7 @@ fn create_state_files(path: &Path, actor: &Actor) -> Result<(), Box<dyn Error>> 
         .iter()
         .zip(state_files)
         .try_for_each(|(state, mut file)| {
-            let impl_content = state_gen::generate_inner_states(actor, state)?;
+            let impl_content = state_gen::generate_inner_states_with_graph(actor, state, graph)?;
             file.write_all(impl_content.as_bytes())
                 .map_err(|e| format!("Error writing state impl: {e}").into())
         })
@@ -87,7 +96,7 @@ fn create_root_mod_rs(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Erro
 
     let mod_rs_content = modules
         .iter()
-        .map(|mod_name| format!("pub mod {};", mod_name))
+        .map(|mod_name| format!("pub mod {mod_name};"))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -98,23 +107,30 @@ fn create_root_mod_rs(mod_path: &Path, mods: &[&str]) -> Result<(), Box<dyn Erro
 pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
     actor.component.states.validate()?;
 
+    // Create and populate the dependency graph once for the entire generation process
+    let mut graph = CodeGenGraph::new();
+
+    // Use the proper new architecture
+    graph.analyze_actor(actor)?;
+
     let mod_path = actor.create_mod_path();
     create_module_dir(&mod_path)?;
     create_module_files(&mod_path, &MODS)?;
 
     let states_path = actor.create_states_path();
-    create_states_module(&states_path, actor)?;
+    create_states_module_with_graph(&states_path, actor, &graph)?;
 
+    // Generate messaging module if message set exists
     if let Some(message_set) = &actor.component.message_set {
-        let message_module_content = generate_message_set(message_set)?;
+        let message_module_content = generate_message_set(message_set, actor, &mut graph)?;
         fs::write(mod_path.join("messaging.rs"), message_module_content)?;
     }
 
-    // Generate component.rs
-    let component_content = generate_component(actor);
+    // Generate component.rs using the pre-populated graph
+    let component_content = generate_component_with_graph(actor, &mut graph)?;
     fs::write(mod_path.join(COMPONENT_MOD), component_content)?;
 
-    // Generate placeholder files for ext_state.rs and runtime.rs
+    // Generate ext_state.rs
     let placeholder_ext_state = format!(
         r#"//! # {ident} Extended State
 //! 
@@ -125,12 +141,13 @@ pub fn create_module(actor: &Actor) -> Result<(), Box<dyn Error>> {
 {ext_state}
 "#,
         ident = actor.ident,
-        ext_state = ext_state_gen::generate_ext_state(&actor.component.ext_state),
+        ext_state = ext_state_gen::generate_ext_state(&actor.component.ext_state, &mut graph),
     );
     fs::write(mod_path.join(EXT_STATE_MOD), placeholder_ext_state)?;
 
-    let runtime_content = generate_runtime(actor)?;
+    let runtime_content = generate_runtime(actor, &graph)?;
     fs::write(mod_path.join(RUNTIME_MOD), runtime_content)?;
+
     let mods = {
         let mut mods = MODS.to_vec();
         mods.push("states");

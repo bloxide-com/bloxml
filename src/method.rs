@@ -1,4 +1,4 @@
-use crate::{Field, Link, create::ToRust};
+use crate::{Field, Link, create::ToRust, graph::CodeGenGraph};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
@@ -42,7 +42,7 @@ impl Method {
 }
 
 impl ToRust for Method {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, _graph: &mut CodeGenGraph) -> String {
         let args = self
             .args
             .iter()

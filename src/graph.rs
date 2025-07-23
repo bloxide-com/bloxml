@@ -1,310 +1,663 @@
 mod node;
+mod rgraph;
+mod ty;
 
-use petgraph::graph::{EdgeIndex, NodeIndex};
-use petgraph::visit::EdgeRef;
-use petgraph::{Directed, Direction, Graph, Incoming, algo};
-use std::collections::hash_map::RandomState;
+use std::collections::HashMap;
+use std::error::Error;
 
-pub use node::*;
+use petgraph::graph::NodeIndex;
+pub use ty::Import;
 
-pub struct RustGraph {
-    pub graph: Graph<Node, Relation, Directed>,
+use crate::blox::actor::Actor;
+use crate::blox::component::Component;
+use crate::blox::message_set::MessageSet;
+use crate::blox::state::States;
+use crate::ext_state::ExtState;
+use crate::graph::node::{Module, Node, RelatedEntry, Relation};
+use crate::graph::rgraph::RustGraph;
+use crate::graph::ty::{DiscoveredType, TypeContext, TypeLocation};
+
+const PRELUDE_TYPES: &[&str] = &[
+    "String", "i32", "u32", "i64", "u64", "bool", "Vec", "Option", "Result", "Box", "Arc", "Rc",
+];
+
+/// Code generation specific wrapper around RustGraph
+///
+/// This provides additional functionality for code generation including
+/// import tracking, dependency analysis, and module organization.
+pub struct CodeGenGraph {
+    pub graph: RustGraph,
+    /// Types discovered during analysis phase
+    discovered_types: Vec<DiscoveredType>,
+    /// Registry of known framework types
+    framework_types: HashMap<String, String>,
+    /// Types that have been resolved to their locations
+    resolved_types: HashMap<String, TypeLocation>,
 }
 
-impl RustGraph {
+impl Default for CodeGenGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CodeGenGraph {
     pub fn new() -> Self {
         Self {
-            graph: Graph::new(),
+            graph: RustGraph::new(),
+            discovered_types: Vec::new(),
+            framework_types: HashMap::new(),
+            resolved_types: HashMap::new(),
         }
     }
 
-    // Re-export petgraph graph analysis algorithms
+    /// Phase 1: Bootstrap all known bloxide framework types
+    pub fn bootstrap_bloxide_types(&mut self) {
+        enum FType {
+            Trait,
+            Type,
+        }
+        use FType::*;
 
-    /// Check if the graph is cyclic
-    pub fn is_cyclic(&self) -> bool {
-        algo::is_cyclic_directed(&self.graph)
+        #[rustfmt::skip]
+        const FRAMEWORK_TYPES: [(&str, &str, FType); 15] = [
+            // Core component types
+            ("Components", "bloxide_tokio::components::Components", Trait),
+            ("Runtime", "bloxide_tokio::components::Runtime", Trait),
+            ("Runnable", "bloxide_tokio::components::Runnable", Trait),
+            // Message handling types
+            ("TokioMessageHandle", "bloxide_tokio::TokioMessageHandle", Type),
+            ("TokioRuntime", "bloxide_tokio::TokioRuntime", Type),
+            ("MessageSender", "bloxide_tokio::messaging::MessageSender", Type),
+            ("MessageSet", "bloxide_tokio::messaging::MessageSet", Trait),
+            ("Message", "bloxide_tokio::messaging::Message", Type),
+            ( "StandardPayload", "bloxide_tokio::messaging::StandardPayload", Type),
+            ( "StandardMessage", "bloxide_tokio::messaging::StandardMessage", Type),
+            // State machine types
+            ("StateMachine", "bloxide_tokio::state_machine::StateMachine", Trait),
+            ("State", "bloxide_tokio::state_machine::State", Trait),
+            ("StateEnum", "bloxide_tokio::state_machine::StateEnum", Trait),
+            ("Transition", "bloxide_tokio::state_machine::Transition", Type),
+            ("ExtendedState", "bloxide_tokio::state_machine::ExtendedState", Trait),
+        ];
+
+        self.framework_types.reserve(FRAMEWORK_TYPES.len());
+        for (type_name, full_path, ftype) in FRAMEWORK_TYPES {
+            self.framework_types
+                .insert(type_name.to_string(), full_path.to_string());
+            // Add the type to the graph
+            match ftype {
+                Trait => self.graph.add_trait_from_path(full_path),
+                Type => self.graph.add_type_from_path(full_path),
+            };
+
+            // Mark as resolved
+            self.resolved_types.insert(
+                type_name.into(),
+                TypeLocation::BloxideFramework(full_path.into()),
+            );
+        }
     }
 
-    /// Get strongly connected components
-    pub fn strongly_connected_components(&self) -> Vec<Vec<NodeIndex>> {
-        algo::tarjan_scc(&self.graph)
+    /// Phase 2: Discover all types used in the actor
+    pub fn discover_actor_types(&mut self, actor: &Actor) -> Result<(), Box<dyn Error>> {
+        let actor_module_path = actor.ident.to_lowercase();
+
+        // Create the main actor module structure
+        let _ = self.add_generated_module(&actor_module_path);
+        let _ = self.add_generated_module(&format!("{actor_module_path}::component"));
+        let _ = self.add_generated_module(&format!("{actor_module_path}::states"));
+        let _ = self.add_generated_module(&format!("{actor_module_path}::ext_state"));
+        let _ = self.add_generated_module(&format!("{actor_module_path}::runtime"));
+        let _ = self.add_generated_module(&format!("{actor_module_path}::messaging"));
+
+        // Discover types in each component
+        self.discover_extended_state_types(&actor.component.ext_state, &actor_module_path)?;
+        self.discover_component_types(&actor.component, &actor_module_path)?;
+        self.discover_state_types(&actor.component.states, &actor_module_path)?;
+
+        if let Some(message_set) = &actor.component.message_set {
+            self.discover_message_types(message_set, &actor_module_path)?;
+        }
+
+        // Discover runtime dependencies
+        self.discover_runtime_types(&actor_module_path);
+
+        Ok(())
     }
 
-    /// Perform topological sort (if acyclic)
-    pub fn topological_sort(&self) -> Result<Vec<NodeIndex>, algo::Cycle<NodeIndex>> {
-        algo::toposort(&self.graph, None)
+    /// Discover types used in runtime module
+    fn discover_runtime_types(&mut self, actor_module: &str) {
+        let module_path = format!("{actor_module}::runtime");
+
+        // Runtime always needs these core types
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::components::Runnable");
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::runtime::*");
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::std_exports::*");
     }
 
-    pub fn add_node(&mut self, node: Node) -> NodeIndex {
-        self.graph.add_node(node)
-    }
-
-    pub fn add_edge(
+    /// Discover types used in extended state
+    fn discover_extended_state_types(
         &mut self,
-        source: NodeIndex,
-        target: NodeIndex,
-        relation: Relation,
-    ) -> Option<EdgeIndex> {
-        Some(self.graph.add_edge(source, target, relation))
-    }
+        ext_state: &ExtState,
+        actor_module: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let module_path = format!("{actor_module}::ext_state");
 
-    // Find nodes by exact name match (now using graph iteration - simpler!)
-    pub fn find_by_name(&self, name: &str) -> Vec<Entry> {
-        self.graph
-            .node_indices()
-            .filter_map(|idx| {
-                let node = &self.graph[idx];
-                if node.name() == name {
-                    Some(Entry::new(idx, node))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
+        // Extended state always needs ExtendedState trait
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::state_machine::ExtendedState");
 
-    // Find nodes by partial name match (now using graph iteration - simpler!)
-    pub fn find_by_partial_name(&self, partial_name: &str) -> Vec<Entry> {
-        self.graph
-            .node_indices()
-            .filter_map(|idx| {
-                let node = &self.graph[idx];
-                if node.name().contains(partial_name) {
-                    Some(Entry::new(idx, node))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    // Find nodes by type
-    pub fn find_by_type(&self, node_type: &str) -> Vec<Entry> {
-        self.graph
-            .node_indices()
-            .filter_map(|idx| {
-                let node = &self.graph[idx];
-                if node.node_str() == node_type {
-                    Some(Entry::new(idx, node))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    // Find nodes by name pattern (case insensitive, now using graph iteration - simpler!)
-    pub fn find_by_pattern(&self, pattern: &str) -> Vec<Entry> {
-        let pattern_lower = pattern.to_lowercase();
-        self.graph
-            .node_indices()
-            .filter_map(|idx| {
-                let node = &self.graph[idx];
-                if node.name().to_lowercase().contains(&pattern_lower) {
-                    Some(Entry::new(idx, node))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    // Find connected nodes using petgraph's built-in neighbors
-    pub fn find_connected_nodes(&self, node_idx: NodeIndex) -> Vec<(NodeIndex, &Node, Relation)> {
-        self.graph
-            .neighbors(node_idx)
-            .map(|neighbor_idx| {
-                // Get the edge weight by finding the edge between these nodes
-                let edge_ref = self
-                    .graph
-                    .edges_connecting(node_idx, neighbor_idx)
-                    .next()
-                    .expect("Edge should exist");
-                (neighbor_idx, &self.graph[neighbor_idx], *edge_ref.weight())
-            })
-            .collect()
-    }
-
-    // Find nodes that depend on this node using petgraph's neighbors_directed
-    pub fn find_dependents(&self, node_idx: NodeIndex) -> Vec<(NodeIndex, &Node, Relation)> {
-        self.graph
-            .neighbors_directed(node_idx, Direction::Incoming)
-            .map(|dependent_idx| {
-                // Get the edge weight by finding the edge between these nodes
-                let edge_ref = self
-                    .graph
-                    .edges_connecting(dependent_idx, node_idx)
-                    .next()
-                    .expect("Edge should exist");
-                (
-                    dependent_idx,
-                    &self.graph[dependent_idx],
-                    *edge_ref.weight(),
-                )
-            })
-            .collect()
-    }
-
-    // Find all simple paths between two nodes using petgraph's algorithm
-    pub fn find_paths(&self, from: NodeIndex, to: NodeIndex) -> Vec<Vec<NodeIndex>> {
-        if from == to {
-            // Special case: petgraph doesn't include trivial self-paths
-            return vec![vec![from]];
+        for field in ext_state.fields() {
+            let field_type = field.ty().as_ref();
+            self.discover_type_usage(field_type, &module_path, TypeContext::ExtendedState);
         }
 
-        algo::all_simple_paths::<Vec<_>, _, RandomState>(&self.graph, from, to, 0, None).collect()
+        Ok(())
     }
 
-    pub fn add_from_path(&mut self, path: &str, final_type: Node) -> NodeIndex {
-        if path.is_empty() {
-            return self.add_node(final_type);
+    /// Discover types used in component
+    fn discover_component_types(
+        &mut self,
+        component: &Component,
+        actor_module: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let module_path = format!("{actor_module}::component");
+
+        // Component always implements Components trait
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::components::Components");
+
+        // Add conditional framework dependencies based on component structure
+        if !component.message_handles.handles.is_empty() {
+            self.add_dependency_by_path(&module_path, "bloxide_tokio::TokioMessageHandle");
         }
 
-        let segments: Vec<&str> = path.split("::").collect();
-
-        if segments.len() == 1 {
-            // No modules, just the final type
-            return self.add_node(final_type);
+        if !component.message_receivers.receivers.is_empty() {
+            self.add_dependency_by_path(&module_path, "bloxide_tokio::components::Runtime");
+            self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::MessageSender");
+            self.add_dependency_by_path(&module_path, "bloxide_tokio::TokioRuntime");
         }
 
-        // Split into module segments and final type name
-        let module_segments = &segments[..segments.len() - 1];
+        if component.message_set.is_some() {
+            self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::MessageSet");
+        }
 
-        let mut current_parent: Option<NodeIndex> = None;
-        let mut current_path = String::new();
+        // Discover types in message handles
+        for handle in &component.message_handles.handles {
+            self.discover_type_usage(&handle.message_type, &module_path, TypeContext::Component);
+        }
 
-        // Create or find each module in the hierarchy
-        for (i, segment) in module_segments.iter().enumerate() {
-            if i > 0 {
-                current_path.push_str("::");
-            }
-            current_path.push_str(segment);
+        // Discover types in message receivers
+        for receiver in &component.message_receivers.receivers {
+            self.discover_type_usage(&receiver.message_type, &module_path, TypeContext::Component);
+        }
 
-            // Check if this exact module path already exists
-            let module_idx =
-                if let Some(existing) = self.find_module_by_path_hierarchical(&current_path) {
-                    existing
-                } else {
-                    // Create new module with just the segment name
-                    let module_node = Node::Module(Module {
-                        name: segment.to_string(),
-                        path: current_path.clone(),
-                    });
-                    let new_idx = self.add_node(module_node);
+        Ok(())
+    }
 
-                    // No longer need dual indexing - graph traversal handles path resolution
+    /// Discover types used in states
+    fn discover_state_types(
+        &mut self,
+        states: &States,
+        actor_module: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let module_path = format!("{actor_module}::states");
 
-                    // Connect to parent if exists
-                    if let Some(parent_idx) = current_parent {
-                        self.add_edge(parent_idx, new_idx, Relation::Contains);
+        // States always need state machine framework types
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::state_machine::StateMachine");
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::state_machine::State");
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::state_machine::StateEnum");
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::state_machine::Transition");
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::components::Components");
+
+        // Discover types in individual states
+        for state in &states.states {
+            if let Some(variants) = &state.variants {
+                for variant in variants {
+                    for arg in &variant.args {
+                        self.discover_type_usage(arg.as_ref(), &module_path, TypeContext::States);
                     }
-
-                    new_idx
-                };
-
-            current_parent = Some(module_idx);
-        }
-
-        // Add the final type
-        let final_idx = self.add_node(final_type);
-
-        // Connect to the last module if exists
-        if let Some(parent_idx) = current_parent {
-            self.add_edge(parent_idx, final_idx, Relation::Contains);
-        }
-
-        final_idx
-    }
-
-    // Find a module by its full path using simple step-by-step traversal (MUCH BETTER!)
-    fn find_module_by_path_hierarchical(&self, path: &str) -> Option<NodeIndex> {
-        let segments: Vec<&str> = path.split("::").collect();
-        if segments.is_empty() {
-            return None;
-        }
-
-        // Start by finding the root module using our existing name index
-        let root_segment = segments[0];
-        let root_candidates = self.find_by_name(root_segment);
-
-        // Find the root module (not other node types)
-        let mut current_module = root_candidates
-            .into_iter()
-            .find(|entry| matches!(self.graph[entry.index], Node::Module(_)))?
-            .index;
-
-        // Traverse the path step by step through the remaining segments
-        for &segment in &segments[1..] {
-            // Look for a child module with the matching name
-            current_module = self.graph.neighbors(current_module).find(|&child_idx| {
-                // Must be a module with Contains relation and matching name
-                matches!(self.graph[child_idx], Node::Module(_))
-                    && self.graph[child_idx].name() == segment
-                    && self
-                        .graph
-                        .edges_connecting(current_module, child_idx)
-                        .any(|edge| *edge.weight() == Relation::Contains)
-            })?;
-        }
-
-        Some(current_module)
-    }
-
-    pub fn add_type_from_path(&mut self, path: &str) -> NodeIndex {
-        let name = path.split("::").last().unwrap().to_string();
-        self.add_from_path(
-            path,
-            Node::Type(Type {
-                name: name.clone(),
-                path: path.to_string(),
-            }),
-        )
-    }
-
-    pub fn add_function_from_path(&mut self, path: &str) -> NodeIndex {
-        let name = path.split("::").last().unwrap().to_string();
-        self.add_from_path(
-            path,
-            Node::Function(Function {
-                name: name.clone(),
-                path: path.to_string(),
-            }),
-        )
-    }
-
-    pub fn add_trait_from_path(&mut self, path: &str) -> NodeIndex {
-        let name = path.split("::").last().unwrap().to_string();
-        self.add_from_path(
-            path,
-            Node::Trait(Trait {
-                name: name.clone(),
-                path: path.to_string(),
-            }),
-        )
-    }
-
-    pub fn get_node_path(&self, node_idx: NodeIndex) -> String {
-        let mut path = Vec::new();
-        let mut current_idx = node_idx;
-        while let Some(node) = self.graph.node_weight(current_idx) {
-            path.push(node.name().to_string());
-            if let Some(parent_idx) = self
-                .graph
-                .edges_directed(current_idx, Incoming)
-                .next()
-                .map(|edge| edge.source())
-            {
-                current_idx = parent_idx;
-            } else {
-                break;
+                }
             }
         }
-        path.into_iter().rev().collect::<Vec<_>>().join("::")
+
+        // Discover types in state enum variants
+        for variant in &states.state_enum.get().variants {
+            for arg in &variant.args {
+                self.discover_type_usage(arg.as_ref(), &module_path, TypeContext::States);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Discover types used in message set
+    fn discover_message_types(
+        &mut self,
+        message_set: &MessageSet,
+        actor_module: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let module_path = format!("{actor_module}::messaging");
+
+        // Message sets always need core messaging framework types
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::Message");
+        self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::MessageSet");
+
+        // Register custom types as actor-local types
+        for custom_type in &message_set.custom_types {
+            let custom_type_path =
+                format!("crate::{actor_module}::messaging::{}", custom_type.ident);
+            self.resolved_types.insert(
+                custom_type.ident.clone(),
+                TypeLocation::ActorCustom(custom_type_path),
+            );
+
+            // Discover types in custom type variants
+            for variant in &custom_type.variants {
+                for arg in &variant.args {
+                    self.discover_type_usage(arg.as_ref(), &module_path, TypeContext::MessageSet);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Discover a type usage and add it to the discovered types list
+    fn discover_type_usage(&mut self, type_string: &str, module_path: &str, context: TypeContext) {
+        let types = self.extract_types_from_string(type_string);
+
+        for type_name in types {
+            // Skip if already discovered in this context
+            if self
+                .discovered_types
+                .iter()
+                .any(|dt| dt.name == type_name && dt.used_in_module == module_path)
+            {
+                continue;
+            }
+
+            self.discovered_types.push(DiscoveredType {
+                name: type_name.clone(),
+                full_type: type_string.to_string(),
+                used_in_module: module_path.to_string(),
+                context: context.clone(),
+            });
+        }
+    }
+
+    /// Extract individual type names from a complex type string
+    fn extract_types_from_string(&self, type_string: &str) -> Vec<String> {
+        let mut types = Vec::new();
+        let delimiters = ['<', '>', ',', ' ', '(', ')', '[', ']'];
+
+        let parts = type_string
+            .split(&delimiters[..])
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
+
+        for part in parts {
+            // Skip builtin types
+            if PRELUDE_TYPES.contains(&part) {
+                continue;
+            }
+
+            if part.contains("::") {
+                // Extract the final type name from qualified paths
+                if let Some(type_name) = part.split("::").last()
+                    && self.is_valid_type_name(type_name)
+                {
+                    types.push(type_name.to_string());
+                }
+            } else if self.is_valid_type_name(part) {
+                types.push(part.to_string());
+            }
+        }
+
+        types
+    }
+
+    /// Check if a string looks like a valid Rust type name
+    fn is_valid_type_name(&self, name: &str) -> bool {
+        if name.is_empty() || name.starts_with(char::is_numeric) {
+            return false;
+        }
+
+        name.chars().all(|c| c.is_alphanumeric() || c == '_')
+    }
+
+    /// Phase 3: Resolve all discovered types to their locations
+    pub fn resolve_type_relationships(&mut self) -> Result<(), Box<dyn Error>> {
+        // Take ownership of discovered types to avoid borrowing issues
+        let discovered_types = std::mem::take(&mut self.discovered_types);
+        for discovered_type in discovered_types.iter() {
+            let location =
+                self.resolve_type_location(&discovered_type.name, &discovered_type.used_in_module);
+
+            if matches!(location, TypeLocation::Unknown) {
+                eprintln!(
+                    "Cannot resolve type '{}' used in module '{}'. Please use qualified paths for external types.",
+                    discovered_type.name, discovered_type.used_in_module
+                );
+                continue;
+            }
+
+            self.resolved_types
+                .insert(discovered_type.name.clone(), location.clone());
+            self.add_resolved_dependency(&discovered_type.used_in_module, &location);
+        }
+
+        self.discovered_types = discovered_types;
+        Ok(())
+    }
+
+    /// Resolve a type name to its location
+    fn resolve_type_location(&self, type_name: &str, used_in_module: &str) -> TypeLocation {
+        // Check if it's a builtin type
+        if PRELUDE_TYPES.contains(&type_name) {
+            return TypeLocation::Builtin;
+        }
+
+        // Check if it's already resolved
+        if let Some(location) = self.resolved_types.get(type_name) {
+            return location.clone();
+        }
+
+        // Check if it's a framework type
+        if let Some(full_path) = self.framework_types.get(type_name) {
+            return TypeLocation::BloxideFramework(full_path.clone());
+        }
+
+        // Check if it might be an actor-local type
+        let actor_module = used_in_module.split("::").next().unwrap_or_default();
+        if !actor_module.is_empty() {
+            // Check if it could be in messaging module
+            let messaging_path = format!("crate::{actor_module}::messaging::{type_name}");
+            if self.resolved_types.values().any(
+                |loc| matches!(loc, TypeLocation::ActorCustom(path) if path == &messaging_path),
+            ) {
+                return TypeLocation::ActorCustom(messaging_path);
+            }
+        }
+
+        TypeLocation::Unknown
+    }
+
+    /// Add a dependency based on resolved type location
+    fn add_resolved_dependency(&mut self, from_module: &str, location: &TypeLocation) {
+        match location {
+            TypeLocation::BloxideFramework(full_path) => {
+                self.add_dependency_by_path(from_module, full_path);
+            }
+            TypeLocation::ActorCustom(full_path) => {
+                if !self.is_self_import(from_module, full_path) {
+                    self.add_dependency_by_path(from_module, full_path);
+                }
+            }
+            TypeLocation::Builtin | TypeLocation::Unknown => {}
+        }
+    }
+
+    /// Phase 4: Generate imports for a module based on resolved dependencies
+    pub fn generate_imports_for_module(&self, module_path: &str) -> Vec<String> {
+        if let Some(module_idx) = self.graph.find_module_by_path_hierarchical(module_path) {
+            self.get_imports_for_module(module_idx)
+                .filter(|import| !self.is_self_import(module_path, import))
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Main orchestration method: run all phases for an actor
+    pub fn analyze_actor(&mut self, actor: &Actor) -> Result<(), Box<dyn Error>> {
+        // Phase 1: Bootstrap framework types
+        self.bootstrap_bloxide_types();
+
+        // Phase 2: Discover all types in the actor
+        self.discover_actor_types(actor)?;
+
+        // Phase 3: Resolve type relationships
+        self.resolve_type_relationships()
+    }
+
+    /// Get debug information about discovered and resolved types
+    pub fn debug_type_resolution(&self) -> String {
+        let mut output = String::new();
+        output.push_str("=== Type Resolution Debug ===\n\n");
+
+        output.push_str("Framework Types:\n");
+        for (name, path) in &self.framework_types {
+            output.push_str(&format!("  {name} -> {path}\n"));
+        }
+
+        output.push_str("\nDiscovered Types:\n");
+        for discovered in &self.discovered_types {
+            output.push_str(&format!(
+                "  {} (in {}, context: {:?})\n",
+                discovered.name, discovered.used_in_module, discovered.context
+            ));
+        }
+
+        output.push_str("\nResolved Types:\n");
+        for (name, location) in &self.resolved_types {
+            output.push_str(&format!("  {name} -> {location:?}\n"));
+        }
+
+        output
+    }
+}
+
+impl CodeGenGraph {
+    /// Check if adding a dependency would result in a self-import
+    fn is_self_import(&self, from_module: &str, to_path: &str) -> bool {
+        // Skip external crates (they can't be self-imports)
+        if !to_path.starts_with("crate::") {
+            return false;
+        }
+
+        // Extract the module path from the to_path
+        let to_module = if to_path.contains("::*") {
+            // Glob import like "crate::actor::runtime::*"
+            to_path.trim_end_matches("::*")
+        } else if let Some(last_colon) = to_path.rfind("::") {
+            // Type path like "crate::actor::component::SomeType" -> "crate::actor::component"
+            &to_path[..last_colon]
+        } else {
+            // Just a simple path
+            to_path
+        };
+
+        // Convert from_module to full crate path for comparison
+        let from_full_path = if from_module.starts_with("crate::") {
+            from_module.to_string()
+        } else {
+            // Convert "actor::component" to "crate::actor::component"
+            format!("crate::{from_module}")
+        };
+
+        // Check if they refer to the same module
+        to_module == from_full_path || to_module == from_module
+    }
+
+    /// Add a dependency between two modules/types using their string paths
+    /// This is a convenience wrapper around add_dependency that handles path lookup
+    pub fn add_dependency_by_path(&mut self, from_module: &str, to_path: &str) {
+        // Safeguard: Check if this would be a self-import
+        if self.is_self_import(from_module, to_path) {
+            return; // Skip self-imports
+        }
+
+        // Get or create the "from" module node
+        let from_module_idx =
+            if let Some(existing) = self.graph.find_module_by_path_hierarchical(from_module) {
+                existing
+            } else {
+                self.add_generated_module(from_module)
+            };
+
+        // Determine what type of node the "to" path represents
+        let to_idx = self.get_or_create_node_by_path(to_path);
+
+        // Add the Uses edge using the direct method
+        self.graph.add_edge(from_module_idx, to_idx, Relation::Uses);
+    }
+
+    /// Get or create a node by path - useful for preparing indices for add_dependency
+    pub fn get_or_create_node_by_path(&mut self, path: &str) -> NodeIndex {
+        if path.ends_with("::*") {
+            let module_path = path.trim_end_matches("::*");
+            return self.graph.add_from_path(
+                module_path,
+                Node::Module(Module {
+                    name: module_path.split("::").last().unwrap().to_string(),
+                    path: module_path.to_string(),
+                }),
+            );
+        }
+
+        self.graph.add_type_from_path(path)
+    }
+
+    /// Get all imports needed for a specific module by traversing Uses edges
+    pub fn get_imports_for_module(&self, module_idx: NodeIndex) -> impl Iterator<Item = String> {
+        let mut imports = Vec::new();
+        let module_path = self.graph.get_node_path(module_idx);
+
+        // Find all nodes this module Uses
+        let connected = self.graph.find_connected_nodes(module_idx);
+        for RelatedEntry {
+            index: connected_idx,
+            node: _,
+            relation,
+        } in connected
+        {
+            if !matches!(relation, Relation::Uses) {
+                continue;
+            }
+            let connected_path = self.graph.get_node_path(connected_idx);
+
+            // Safeguard: Skip self-imports
+            if self.is_self_import(&module_path, &connected_path) {
+                continue;
+            }
+
+            let import_statement = self.graph.get_node_path(connected_idx);
+            imports.push(Import::new(import_statement));
+        }
+
+        imports.sort();
+        imports.dedup();
+        imports.into_iter().map(|imp| imp.rust_import())
+    }
+
+    /// Get the full path of a node by node index (delegated to inner graph)
+    pub fn get_node_path(&self, node_idx: NodeIndex) -> String {
+        self.graph.get_node_path(node_idx)
+    }
+
+    /// Add a generated type to the graph and track its dependencies
+    pub fn add_generated_type(&mut self, type_path: &str, dependencies: &[String]) -> NodeIndex {
+        let type_idx = self.graph.add_type_from_path(type_path);
+
+        // Add dependencies
+        for dep_path in dependencies {
+            let dep_idx = self.graph.add_type_from_path(dep_path);
+            self.graph.add_edge(type_idx, dep_idx, Relation::Uses);
+        }
+
+        type_idx
+    }
+
+    /// Add a generated module and track its contents
+    pub fn add_generated_module(&mut self, module_path: &str) -> NodeIndex {
+        match self.graph.find_module_by_path_hierarchical(module_path) {
+            Some(existing) => existing,
+            None => self.graph.add_from_path(
+                module_path,
+                Node::Module(Module {
+                    name: module_path.split("::").last().unwrap().to_string(),
+                    path: module_path.to_string(),
+                }),
+            ),
+        }
+    }
+
+    /// Get a visual representation of the dependency graph
+    pub fn debug_dependencies(&self) -> String {
+        let mut output = String::new();
+        output.push_str("=== Code Generation Dependency Graph ===\n");
+
+        for node_idx in self.graph.graph.node_indices() {
+            let node = &self.graph.graph[node_idx];
+            output.push_str(&format!("Node: {} ({})\n", node.name(), node.node_str()));
+
+            for RelatedEntry { node, relation, .. } in self.graph.find_connected_nodes(node_idx) {
+                output.push_str(&format!("  -> {} ({relation:?})\n", node.name()));
+            }
+            output.push('\n');
+        }
+
+        output
+    }
+
+    /// Extract required imports by analyzing the generated code for type usage
+    pub fn extract_required_imports(&self, code: &str) -> Vec<String> {
+        let mut imports = Vec::new();
+
+        // Map of type patterns to their import paths
+        let type_mappings = [
+            // Core bloxide types
+            ("Components", "bloxide_tokio::components::Components"),
+            ("TokioMessageHandle", "bloxide_tokio::TokioMessageHandle"),
+            ("TokioRuntime", "bloxide_tokio::TokioRuntime"),
+            ("Runtime", "bloxide_tokio::components::Runtime"),
+            ("MessageSender", "bloxide_tokio::messaging::MessageSender"),
+            ("MessageSet", "bloxide_tokio::messaging::MessageSet"),
+            ("Message", "bloxide_tokio::messaging::Message"),
+            // State machine types
+            ("StateMachine", "bloxide_tokio::state_machine::StateMachine"),
+            ("State", "bloxide_tokio::state_machine::State"),
+            ("StateEnum", "bloxide_tokio::state_machine::StateEnum"),
+            ("Transition", "bloxide_tokio::state_machine::Transition"),
+            (
+                "ExtendedState",
+                "bloxide_tokio::state_machine::ExtendedState",
+            ),
+            // Runtime types
+            ("Runnable", "bloxide_tokio::components::Runnable"),
+        ];
+
+        for (type_name, import_path) in &type_mappings {
+            if self.code_uses_type(code, type_name) {
+                imports.push(import_path.to_string());
+            }
+        }
+
+        imports
+    }
+
+    /// Check if the code uses a specific type
+    pub fn code_uses_type(&self, code: &str, type_name: &str) -> bool {
+        // Look for various usage patterns
+        let patterns = [
+            format!("impl {type_name}"), // trait implementations
+            format!(": {type_name}"),    // type annotations
+            format!("<{type_name}>"),    // generic parameters
+            format!("{type_name}::"),    // qualified paths
+            format!("{type_name}<"),     // generic type usage
+            format!("as {type_name}"),   // type casts
+        ];
+
+        patterns.iter().any(|pattern| code.contains(pattern))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use petgraph::Direction::Incoming;
+
+    use crate::graph::node::Type;
+
     use super::*;
 
     // Test helper functions for validating module hierarchy using petgraph algorithms
@@ -344,15 +697,14 @@ mod tests {
             .node_indices()
             .filter(|&idx| {
                 // Include nodes that have containment edges (either incoming or outgoing)
-                let has_containment = graph
+                graph
                     .graph
                     .edges(idx)
                     .any(|e| *e.weight() == Relation::Contains)
                     || graph
                         .graph
                         .edges_directed(idx, Incoming)
-                        .any(|e| *e.weight() == Relation::Contains);
-                has_containment
+                        .any(|e| *e.weight() == Relation::Contains)
             })
             .collect();
 
@@ -532,7 +884,7 @@ mod tests {
 
         // Both should be contained in the same db module
         let db_idx = db_modules[0].index;
-        let db_contents = graph.find_connected_nodes(db_idx);
+        let db_contents = graph.find_connected_nodes(db_idx).collect::<Vec<_>>();
         assert_eq!(db_contents.len(), 2); // Should contain both Connection and Query
     }
 
@@ -650,11 +1002,11 @@ mod tests {
         graph.add_function_from_path("utils::validate_data");
 
         // Case insensitive search for "data"
-        let data_matches = graph.find_by_pattern("data");
+        let data_matches = graph.find_by_pattern("data").collect::<Vec<_>>();
         assert_eq!(data_matches.len(), 3);
 
         // Case insensitive search for "DATA"
-        let data_upper_matches = graph.find_by_pattern("DATA");
+        let data_upper_matches = graph.find_by_pattern("DATA").collect::<Vec<_>>();
         assert_eq!(data_upper_matches.len(), 3);
     }
 
@@ -673,11 +1025,10 @@ mod tests {
 
         // Should find the User struct through Uses relationship
         let uses_relationships: Vec<_> = connected
-            .iter()
-            .filter(|(_, _, rel)| *rel == Relation::Uses)
+            .filter(|entry| entry.relation() == Relation::Uses)
             .collect();
         assert_eq!(uses_relationships.len(), 1);
-        assert_eq!(uses_relationships[0].1.name(), "User");
+        assert_eq!(uses_relationships[0].node().name(), "User");
     }
 
     #[test]
@@ -693,15 +1044,19 @@ mod tests {
         graph.add_edge(controller_idx, user_idx, Relation::Uses);
 
         // Find what depends on User (excluding containment relationships)
-        let dependents: Vec<_> = graph
+        let dependent_names: Vec<_> = graph
             .find_dependents(user_idx)
-            .into_iter()
-            .filter(|(_, _, rel)| *rel != Relation::Contains)
+            .filter_map(|entry| {
+                if entry.relation() != Relation::Contains {
+                    Some(entry.node().name())
+                } else {
+                    None
+                }
+            })
             .collect();
 
         // Should find both UserService and UserController
-        assert_eq!(dependents.len(), 2);
-        let dependent_names: Vec<_> = dependents.iter().map(|(_, node, _)| node.name()).collect();
+        assert_eq!(dependent_names.len(), 2);
         assert!(dependent_names.contains(&"UserService".to_string()));
         assert!(dependent_names.contains(&"UserController".to_string()));
     }
@@ -789,7 +1144,7 @@ mod tests {
 
         // Should pass validation
         assert!(validate_module_hierarchy(&graph).is_ok());
-        assert!(!graph.is_cyclic());
+        assert!(!graph.is_cyclic(), "Module hierarchy should be acyclic");
 
         let roots = find_hierarchy_roots(&graph);
         assert_eq!(roots.len(), 1);
@@ -926,55 +1281,252 @@ mod tests {
     }
 
     #[test]
-    fn test_auto_module_connection() {
-        let mut graph = RustGraph::new();
+    fn test_unified_dependency_system() {
+        let mut graph = CodeGenGraph::new();
+        let module_path = "session::component";
 
-        // Create a module hierarchy
-        graph.add_type_from_path("utils::db::Connection");
-        graph.add_type_from_path("utils::validation::EmailValidator");
+        // Test adding external dependencies using the new unified system
+        graph.add_dependency_by_path(module_path, "bloxide_tokio::components::Components");
+        graph.add_dependency_by_path(module_path, "bloxide_tokio::TokioMessageHandle");
+        graph.add_dependency_by_path(module_path, "crate::session::messaging::CustomArgs");
 
-        // Find the utils module
-        let utils_modules = graph.find_by_name("utils");
-        assert_eq!(
-            utils_modules.len(),
-            1,
-            "Should find exactly one utils module"
-        );
-        let utils_idx = utils_modules[0].index;
+        // Get the module and check its imports
+        let module_idx = graph
+            .graph
+            .find_module_by_path_hierarchical(module_path)
+            .expect("Module should exist");
+        let imports = graph.get_imports_for_module(module_idx).collect::<Vec<_>>();
 
-        // Get all nodes connected to utils with Contains relationship
-        let connected_nodes = graph.find_connected_nodes(utils_idx);
-        let children: Vec<_> = connected_nodes
-            .iter()
-            .filter(|(_, _, relation)| *relation == Relation::Contains)
-            .collect();
+        // Should generate proper import statements
+        assert!(imports.iter().any(|s| s.contains("Components")));
+        assert!(imports.iter().any(|s| s.contains("TokioMessageHandle")));
+        assert!(imports.iter().any(|s| s.contains("CustomArgs")));
+    }
 
-        // Verify utils has exactly 2 children
-        assert_eq!(
-            children.len(),
-            2,
-            "utils module should have exactly 2 children"
-        );
+    #[test]
+    fn test_self_import_detection() {
+        let graph = CodeGenGraph::new();
 
-        // Get the names of the children
-        let child_names: Vec<String> = children.iter().map(|(_, node, _)| node.name()).collect();
+        // Test cases that should be detected as self-imports
+        assert!(graph.is_self_import("session::component", "crate::session::component::SomeType"));
+        assert!(graph.is_self_import("session::component", "crate::session::component::*"));
+        assert!(graph.is_self_import(
+            "crate::session::component",
+            "crate::session::component::SomeType"
+        ));
 
-        // Verify the children are "db" and "validation"
-        assert!(
-            child_names.contains(&"db".to_string()),
-            "utils should contain db module"
-        );
-        assert!(
-            child_names.contains(&"validation".to_string()),
-            "utils should contain validation module"
-        );
+        // Test cases that should NOT be detected as self-imports
+        assert!(!graph.is_self_import(
+            "session::component",
+            "crate::session::messaging::CustomArgs"
+        ));
+        assert!(!graph.is_self_import(
+            "session::component",
+            "bloxide_tokio::components::Components"
+        ));
+        assert!(!graph.is_self_import("session::component", "bloxide_tokio::TokioMessageHandle"));
 
-        // Verify both children are modules
-        for (_, node, _) in &children {
+        println!("✅ Self-import detection working correctly");
+    }
+
+    #[test]
+    fn test_component_imports_no_self_imports() {
+        let mut graph = CodeGenGraph::new();
+
+        // Load the test actor config
+        let actor_json = std::fs::read_to_string("tests/actor_config.json")
+            .expect("Should be able to read test actor config");
+        let actor: Actor =
+            serde_json::from_str(&actor_json).expect("Should be able to parse test actor config");
+
+        // Use the new architecture to analyze the actor
+        graph
+            .analyze_actor(&actor)
+            .expect("Actor analysis should succeed");
+        let component_module_path = "session::component";
+
+        // Get the component module and its imports
+        let component_module_idx = graph
+            .graph
+            .find_module_by_path_hierarchical(component_module_path)
+            .expect("Component module should exist");
+        let imports = graph
+            .get_imports_for_module(component_module_idx)
+            .collect::<Vec<_>>();
+
+        assert!(imports.iter().any(|s| s.contains("CustomArgs")));
+        assert!(imports.iter().any(|s| s.contains("Components")));
+        assert!(imports.iter().any(|s| s.contains("TokioMessageHandle")));
+        for import in &imports {
             assert!(
-                matches!(node, Node::Module(_)),
-                "Children should be Module nodes"
+                !import.contains("crate::session::component"),
+                "Found self-import in component module: {import}"
             );
         }
+
+        // Verify we still have the expected external imports
+    }
+
+    #[test]
+    fn test_self_import_prevention() {
+        let mut graph = CodeGenGraph::new();
+
+        // Test that self-imports are properly detected and prevented
+        println!("=== Testing self-import detection ===");
+
+        // These should be detected as self-imports
+        assert!(graph.is_self_import("session::component", "crate::session::component::SomeType"));
+        assert!(graph.is_self_import("session::component", "crate::session::component::*"));
+        assert!(graph.is_self_import(
+            "crate::session::component",
+            "crate::session::component::SomeType"
+        ));
+
+        // These should NOT be detected as self-imports
+        assert!(!graph.is_self_import(
+            "session::component",
+            "crate::session::messaging::CustomArgs"
+        ));
+        assert!(!graph.is_self_import(
+            "session::component",
+            "bloxide_tokio::components::Components"
+        ));
+        assert!(!graph.is_self_import("session::component", "bloxide_tokio::TokioMessageHandle"));
+
+        // Test that self-imports are actually prevented when adding dependencies
+        graph.add_dependency_by_path("session::component", "crate::session::component::SomeType"); // Should be ignored
+        graph.add_dependency_by_path(
+            "session::component",
+            "crate::session::messaging::CustomArgs",
+        ); // Should be added
+        graph.add_dependency_by_path(
+            "session::component",
+            "bloxide_tokio::components::Components",
+        ); // Should be added
+
+        if let Some(component_idx) = graph
+            .graph
+            .find_module_by_path_hierarchical("session::component")
+        {
+            let imports = graph
+                .get_imports_for_module(component_idx)
+                .collect::<Vec<_>>();
+
+            assert!(imports.iter().any(|s| s.contains("CustomArgs")));
+            assert!(imports.iter().any(|s| s.contains("Components")));
+            // Should not contain any self-imports
+            for import in &imports {
+                assert!(
+                    !import.contains("crate::session::component"),
+                    "Found self-import in generated imports: {import}",
+                );
+            }
+        } else {
+            panic!("Component module should exist in graph");
+        }
+    }
+
+    #[test]
+    fn test_add_dependency_by_path_creates_uses_relationships() {
+        let mut graph = CodeGenGraph::new();
+
+        // Add a dependency
+        graph.add_dependency_by_path(
+            "session::component",
+            "bloxide_tokio::components::Components",
+        );
+
+        // Check that the module was created
+        let component_module_idx = graph
+            .graph
+            .find_module_by_path_hierarchical("session::component")
+            .expect("Component module should exist");
+
+        // Get the connections and verify the Uses relationship exists
+        let connections = graph.graph.find_connected_nodes(component_module_idx);
+        let uses_connections: Vec<_> = connections
+            .filter(|entry| entry.relation() == Relation::Uses)
+            .collect();
+
+        assert!(
+            !uses_connections.is_empty(),
+            "Should have at least one Uses relationship"
+        );
+
+        // Check that it connects to the Components trait
+        let components_connection = uses_connections
+            .iter()
+            .find(|entry| entry.node().name() == "Components");
+
+        assert!(
+            components_connection.is_some(),
+            "Should have a Uses relationship to Components trait"
+        );
+
+        println!("✅ add_dependency_by_path correctly creates Uses relationships:");
+        for entry in uses_connections {
+            println!(
+                "  session::component --Uses--> {}",
+                entry.node().name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_enhanced_discovery_creates_framework_dependencies() {
+        let mut graph = CodeGenGraph::new();
+
+        // Load the test actor config
+        let actor_json = std::fs::read_to_string("tests/actor_config.json")
+            .expect("Should be able to read test actor config");
+        let actor: Actor =
+            serde_json::from_str(&actor_json).expect("Should be able to parse test actor config");
+
+        // Run the enhanced analysis
+        graph
+            .analyze_actor(&actor)
+            .expect("Analysis should succeed");
+
+        // Check component module dependencies
+        let component_module_idx = graph
+            .graph
+            .find_module_by_path_hierarchical("session::component")
+            .expect("Component module should exist");
+
+        let component_imports = graph
+            .get_imports_for_module(component_module_idx)
+            .collect::<Vec<_>>();
+        // Check that expected framework dependencies are present
+        assert!(
+            component_imports.iter().any(|s| s.contains("Components")),
+            "Component should import Components trait"
+        );
+        assert!(
+            component_imports
+                .iter()
+                .any(|s| s.contains("TokioMessageHandle")),
+            "Component should import TokioMessageHandle (has message handles)"
+        );
+
+        // Check states module dependencies
+        let states_module_idx = graph
+            .graph
+            .find_module_by_path_hierarchical("session::states")
+            .expect("States module should exist");
+
+        let states_imports = graph
+            .get_imports_for_module(states_module_idx)
+            .collect::<Vec<_>>();
+
+        assert!(
+            states_imports.iter().any(|s| s.contains("StateMachine")),
+            "States should import StateMachine trait"
+        );
+        assert!(
+            states_imports.iter().any(|s| s.contains("State")),
+            "States should import State trait"
+        );
+
+        println!("✅ Enhanced discovery methods create expected framework dependencies");
     }
 }

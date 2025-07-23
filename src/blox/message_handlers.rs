@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::create::ToRust;
+use crate::{create::ToRust, graph::CodeGenGraph};
 
 /// Defines a message handle for sending messages
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
@@ -27,7 +27,7 @@ impl MessageHandle {
 }
 
 impl ToRust for MessageHandle {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, _graph: &mut CodeGenGraph) -> String {
         format!(
             "pub {}: TokioMessageHandle<{}>",
             self.ident, self.message_type
@@ -60,9 +60,9 @@ impl MessageReceiver {
 }
 
 impl ToRust for MessageReceiver {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, _graph: &mut CodeGenGraph) -> String {
         format!(
-            "pub {}: <<bloxide_tokio::TokioRuntime as Runtime>::MessageHandle<{}> as MessageSender>::ReceiverType",
+            "pub {}: <<TokioRuntime as Runtime>::MessageHandle<{}> as MessageSender>::ReceiverType",
             self.ident, self.message_type
         )
     }
@@ -98,11 +98,11 @@ impl MessageHandles {
 }
 
 impl ToRust for MessageHandles {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, graph: &mut CodeGenGraph) -> String {
         let fields = self
             .handles
             .iter()
-            .map(ToRust::to_rust)
+            .map(|h| h.to_rust(graph))
             .collect::<Vec<_>>()
             .join(",\n\t");
         format!(
@@ -144,11 +144,11 @@ impl MessageReceivers {
 }
 
 impl ToRust for MessageReceivers {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, graph: &mut CodeGenGraph) -> String {
         let fields = self
             .receivers
             .iter()
-            .map(ToRust::to_rust)
+            .map(|mr| mr.to_rust(graph))
             .collect::<Vec<_>>()
             .join(",\n\t");
         format!(

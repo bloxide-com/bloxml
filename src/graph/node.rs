@@ -2,7 +2,7 @@ use core::fmt;
 
 use petgraph::graph::NodeIndex;
 
-pub trait RustEntity: fmt::Debug {
+pub(super) trait RustEntity: fmt::Debug {
     fn name(&self) -> String;
     fn full_path(&self) -> String;
 }
@@ -11,6 +11,12 @@ pub trait RustEntity: fmt::Debug {
 pub struct Crate {
     pub name: String,
     pub path: String,
+}
+
+impl Crate {
+    pub fn new(name: String, path: String) -> Self {
+        Self { name, path }
+    }
 }
 
 impl RustEntity for Crate {
@@ -26,6 +32,12 @@ impl RustEntity for Crate {
 pub struct Module {
     pub name: String,
     pub path: String,
+}
+
+impl Module {
+    pub fn new(name: String, path: String) -> Self {
+        Self { name, path }
+    }
 }
 
 impl RustEntity for Module {
@@ -44,6 +56,12 @@ pub struct Type {
     pub path: String,
 }
 
+impl Type {
+    pub fn new(name: String, path: String) -> Self {
+        Self { name, path }
+    }
+}
+
 impl RustEntity for Type {
     fn name(&self) -> String {
         self.name.clone()
@@ -60,6 +78,12 @@ pub struct Function {
     pub path: String,
 }
 
+impl Function {
+    pub fn new(name: String, path: String) -> Self {
+        Self { name, path }
+    }
+}
+
 impl RustEntity for Function {
     fn name(&self) -> String {
         self.name.clone()
@@ -74,6 +98,12 @@ impl RustEntity for Function {
 pub struct Trait {
     pub name: String,
     pub path: String,
+}
+
+impl Trait {
+    pub fn new(name: String, path: String) -> Self {
+        Self { name, path }
+    }
 }
 
 impl RustEntity for Trait {
@@ -143,10 +173,10 @@ impl Node {
 pub enum Relation {
     Contains,
     Implements,
-    Calls,
     Uses,
 }
 
+#[derive(Debug, Clone)]
 pub struct Entry<'e> {
     pub index: NodeIndex,
     pub node: &'e Node,
@@ -155,5 +185,34 @@ pub struct Entry<'e> {
 impl<'e> Entry<'e> {
     pub fn new(index: NodeIndex, node: &'e Node) -> Self {
         Self { index, node }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RelatedEntry<'e> {
+    pub index: NodeIndex,
+    pub node: &'e Node,
+    pub relation: Relation,
+}
+
+impl<'e> RelatedEntry<'e> {
+    pub fn new(index: NodeIndex, node: &'e Node, relation: Relation) -> Self {
+        Self {
+            index,
+            node,
+            relation,
+        }
+    }
+
+    pub fn relation(&self) -> Relation {
+        self.relation
+    }
+
+    pub fn node(&self) -> &Node {
+        self.node
+    }
+
+    pub fn index(&self) -> NodeIndex {
+        self.index
     }
 }
