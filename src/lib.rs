@@ -75,7 +75,7 @@ pub(crate) mod tests {
             vec![
                 EnumVariant::new(
                     "CustomValue1",
-                    vec![Link::new("bloxide_core::messaging::Standard")],
+                    vec![Link::new("bloxide_core::messaging::StandardPayload")],
                 ),
                 EnumVariant::new("CustomValue2", vec![Link::new("CustomArgs")]),
             ],
@@ -94,14 +94,14 @@ pub(crate) mod tests {
 
     pub fn create_test_handles() -> MessageHandles {
         let mut handles = MessageHandles::new("ActorHandles");
-        handles.add_handle(MessageHandle::new("standard_handle", "Standard"));
+        handles.add_handle(MessageHandle::new("standard_handle", "StandardPayload"));
         handles.add_handle(MessageHandle::new("customargs_handle", "CustomArgs"));
         handles
     }
 
     pub fn create_test_receivers() -> MessageReceivers {
         let mut receivers = MessageReceivers::new("ActorReceivers");
-        receivers.add_receiver(MessageReceiver::new("standard_rx", "Standard"));
+        receivers.add_receiver(MessageReceiver::new("standard_rx", "StandardPayload"));
         receivers.add_receiver(MessageReceiver::new("customargs_rx", "CustomArgs"));
         receivers
     }
