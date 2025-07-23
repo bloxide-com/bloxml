@@ -26,7 +26,7 @@
           {
             "ident": "CustomValue1",
             "args": [
-              "bloxide_core::messaging::Standard"
+              "bloxide_core::messaging::StandardPayload"
             ]
           },
           {
@@ -43,7 +43,7 @@
       "handles": [
         {
           "ident": "standard_handle",
-          "message_type": "Standard"
+          "message_type": "StandardPayload"
         },
         {
           "ident": "customargs_handle",
@@ -56,7 +56,7 @@
       "receivers": [
         {
           "ident": "standard_rx",
-          "message_type": "Standard"
+          "message_type": "StandardPayload"
         },
         {
           "ident": "customargs_rx",
