@@ -11,15 +11,11 @@ pub use ty::Import;
 use crate::blox::actor::Actor;
 use crate::blox::component::Component;
 use crate::blox::message_set::MessageSet;
-use crate::blox::state::States;
+
 use crate::ext_state::ExtState;
 use crate::graph::node::{Module, Node, RelatedEntry, Relation};
 use crate::graph::rgraph::RustGraph;
 use crate::graph::ty::{DiscoveredType, TypeContext, TypeLocation};
-
-const PRELUDE_TYPES: &[&str] = &[
-    "String", "i32", "u32", "i64", "u64", "bool", "Vec", "Option", "Result", "Box", "Arc", "Rc",
-];
 
 /// Code generation specific wrapper around RustGraph
 ///
@@ -42,6 +38,34 @@ impl Default for CodeGenGraph {
 }
 
 impl CodeGenGraph {
+    const PRELUDE_TYPES: &[&str] = &[
+        "String", "i32", "u32", "i64", "u64", "bool", "Vec", "Option", "Result", "Box", "Arc", "Rc",
+    ];
+
+    const RUNTIME_DEFAULT_IMPORTS: &[&str] = &[
+        "bloxide_tokio::components::Runnable",
+        "bloxide_tokio::components::Blox",
+        "std::pin::Pin",
+        "tokio::select",
+    ];
+
+    const EXT_STATE_DEFAULT_IMPORTS: &[&str] = &["bloxide_tokio::state_machine::ExtendedState"];
+
+    const COMPONENT_DEFAULT_IMPORTS: &[&str] = &["bloxide_tokio::components::Components"];
+
+    const STATES_DEFAULT_IMPORTS: &[&str] = &[
+        "bloxide_tokio::state_machine::StateMachine",
+        "bloxide_tokio::state_machine::State",
+        "bloxide_tokio::state_machine::StateEnum",
+        "bloxide_tokio::state_machine::Transition",
+        "bloxide_tokio::components::Components",
+    ];
+
+    const MESSAGING_DEFAULT_IMPORTS: &[&str] = &[
+        "bloxide_tokio::messaging::Message",
+        "bloxide_tokio::messaging::MessageSet",
+    ];
+
     pub fn new() -> Self {
         Self {
             graph: RustGraph::new(),
@@ -114,7 +138,7 @@ impl CodeGenGraph {
         // Discover types in each component
         self.discover_extended_state_types(&actor.component.ext_state, &actor_module_path)?;
         self.discover_component_types(&actor.component, &actor_module_path)?;
-        self.discover_state_types(&actor.component.states, &actor_module_path)?;
+        self.discover_state_types(&actor.component, &actor_module_path)?;
 
         if let Some(message_set) = &actor.component.message_set {
             self.discover_message_types(message_set, &actor_module_path)?;
@@ -130,10 +154,9 @@ impl CodeGenGraph {
     fn discover_runtime_types(&mut self, actor_module: &str) {
         let module_path = format!("{actor_module}::runtime");
 
-        // Runtime always needs these core types
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::components::Runnable");
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::runtime::*");
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::std_exports::*");
+        Self::RUNTIME_DEFAULT_IMPORTS
+            .iter()
+            .for_each(|import| self.add_dependency_by_path(&module_path, import));
     }
 
     /// Discover types used in extended state
@@ -144,8 +167,9 @@ impl CodeGenGraph {
     ) -> Result<(), Box<dyn Error>> {
         let module_path = format!("{actor_module}::ext_state");
 
-        // Extended state always needs ExtendedState trait
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::state_machine::ExtendedState");
+        Self::EXT_STATE_DEFAULT_IMPORTS
+            .iter()
+            .for_each(|import| self.add_dependency_by_path(&module_path, import));
 
         for field in ext_state.fields() {
             let field_type = field.ty().as_ref();
@@ -163,8 +187,9 @@ impl CodeGenGraph {
     ) -> Result<(), Box<dyn Error>> {
         let module_path = format!("{actor_module}::component");
 
-        // Component always implements Components trait
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::components::Components");
+        Self::COMPONENT_DEFAULT_IMPORTS
+            .iter()
+            .for_each(|import| self.add_dependency_by_path(&module_path, import));
 
         // Add conditional framework dependencies based on component structure
         if !component.message_handles.handles.is_empty() {
@@ -181,15 +206,43 @@ impl CodeGenGraph {
             self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::MessageSet");
         }
 
-        // Discover types in message handles
-        for handle in &component.message_handles.handles {
-            self.discover_type_usage(&handle.message_type, &module_path, TypeContext::Component);
+        let states_type_path = format!(
+            "crate::{actor_module}::states::{}",
+            component.states.state_enum.get().ident
+        );
+        self.add_dependency_by_path(&module_path, &states_type_path);
+
+        if let Some(message_set) = &component.message_set {
+            let message_set_path = format!(
+                "crate::{actor_module}::messaging::{}",
+                message_set.get().ident
+            );
+            self.add_dependency_by_path(&module_path, &message_set_path);
         }
 
+        let ext_state_path = format!(
+            "crate::{actor_module}::ext_state::{}",
+            component.ext_state.ident()
+        );
+        self.add_dependency_by_path(&module_path, &ext_state_path);
+
+        // Discover types in message handles
+        component.message_handles.handles.iter().for_each(|handle| {
+            self.discover_type_usage(&handle.message_type, &module_path, TypeContext::Component);
+        });
+
         // Discover types in message receivers
-        for receiver in &component.message_receivers.receivers {
-            self.discover_type_usage(&receiver.message_type, &module_path, TypeContext::Component);
-        }
+        component
+            .message_receivers
+            .receivers
+            .iter()
+            .for_each(|receiver| {
+                self.discover_type_usage(
+                    &receiver.message_type,
+                    &module_path,
+                    TypeContext::Component,
+                );
+            });
 
         Ok(())
     }
@@ -197,35 +250,47 @@ impl CodeGenGraph {
     /// Discover types used in states
     fn discover_state_types(
         &mut self,
-        states: &States,
+        component: &Component,
         actor_module: &str,
     ) -> Result<(), Box<dyn Error>> {
         let module_path = format!("{actor_module}::states");
 
-        // States always need state machine framework types
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::state_machine::StateMachine");
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::state_machine::State");
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::state_machine::StateEnum");
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::state_machine::Transition");
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::components::Components");
+        Self::STATES_DEFAULT_IMPORTS
+            .iter()
+            .for_each(|import| self.add_dependency_by_path(&module_path, import));
 
-        // Discover types in individual states
-        for state in &states.states {
-            if let Some(variants) = &state.variants {
-                for variant in variants {
-                    for arg in &variant.args {
-                        self.discover_type_usage(arg.as_ref(), &module_path, TypeContext::States);
-                    }
-                }
-            }
+        let component_type_path = format!("crate::{actor_module}::component::{}", component.ident);
+        self.add_dependency_by_path(&module_path, &component_type_path);
+
+        if let Some(message_set) = &component.message_set {
+            let message_set_path = format!(
+                "crate::{actor_module}::messaging::{}",
+                message_set.get().ident
+            );
+            self.add_dependency_by_path(&module_path, &message_set_path);
         }
 
-        // Discover types in state enum variants
-        for variant in &states.state_enum.get().variants {
-            for arg in &variant.args {
-                self.discover_type_usage(arg.as_ref(), &module_path, TypeContext::States);
-            }
-        }
+        component
+            .states
+            .states
+            .iter()
+            .filter_map(|state| state.variants.as_ref())
+            .flatten()
+            .flat_map(|variant| &variant.args)
+            .for_each(|arg| {
+                self.discover_type_usage(arg.as_ref(), &module_path, TypeContext::States)
+            });
+
+        component
+            .states
+            .state_enum
+            .get()
+            .variants
+            .iter()
+            .flat_map(|variant| &variant.args)
+            .for_each(|arg| {
+                self.discover_type_usage(arg.as_ref(), &module_path, TypeContext::States)
+            });
 
         Ok(())
     }
@@ -238,9 +303,19 @@ impl CodeGenGraph {
     ) -> Result<(), Box<dyn Error>> {
         let module_path = format!("{actor_module}::messaging");
 
-        // Message sets always need core messaging framework types
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::Message");
-        self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::MessageSet");
+        Self::MESSAGING_DEFAULT_IMPORTS
+            .iter()
+            .for_each(|import| self.add_dependency_by_path(&module_path, import));
+
+        // Discover types in main message set enum variants
+        message_set
+            .def
+            .variants
+            .iter()
+            .flat_map(|variant| &variant.args)
+            .for_each(|arg| {
+                self.discover_type_usage(arg.as_ref(), &module_path, TypeContext::MessageSet)
+            });
 
         // Register custom types as actor-local types
         for custom_type in &message_set.custom_types {
@@ -251,12 +326,13 @@ impl CodeGenGraph {
                 TypeLocation::ActorCustom(custom_type_path),
             );
 
-            // Discover types in custom type variants
-            for variant in &custom_type.variants {
-                for arg in &variant.args {
-                    self.discover_type_usage(arg.as_ref(), &module_path, TypeContext::MessageSet);
-                }
-            }
+            custom_type
+                .variants
+                .iter()
+                .flat_map(|variant| &variant.args)
+                .for_each(|arg| {
+                    self.discover_type_usage(arg.as_ref(), &module_path, TypeContext::MessageSet)
+                });
         }
 
         Ok(())
@@ -297,7 +373,7 @@ impl CodeGenGraph {
 
         for part in parts {
             // Skip builtin types
-            if PRELUDE_TYPES.contains(&part) {
+            if Self::PRELUDE_TYPES.contains(&part) {
                 continue;
             }
 
@@ -353,7 +429,7 @@ impl CodeGenGraph {
     /// Resolve a type name to its location
     fn resolve_type_location(&self, type_name: &str, used_in_module: &str) -> TypeLocation {
         // Check if it's a builtin type
-        if PRELUDE_TYPES.contains(&type_name) {
+        if Self::PRELUDE_TYPES.contains(&type_name) {
             return TypeLocation::Builtin;
         }
 
@@ -1465,10 +1541,7 @@ mod tests {
 
         println!("✅ add_dependency_by_path correctly creates Uses relationships:");
         for entry in uses_connections {
-            println!(
-                "  session::component --Uses--> {}",
-                entry.node().name()
-            );
+            println!("  session::component --Uses--> {}", entry.node().name());
         }
     }
 
@@ -1508,6 +1581,29 @@ mod tests {
             "Component should import TokioMessageHandle (has message handles)"
         );
 
+        // Check that component imports its associated types
+        assert!(
+            component_imports
+                .iter()
+                .any(|s| s.contains("SessionStates")),
+            "Component should import States type (SessionStates). Found imports: {:?}",
+            component_imports
+        );
+        assert!(
+            component_imports
+                .iter()
+                .any(|s| s.contains("SessionMessageSet")),
+            "Component should import MessageSet type (SessionMessageSet). Found imports: {:?}",
+            component_imports
+        );
+        assert!(
+            component_imports
+                .iter()
+                .any(|s| s.contains("SessionExtState")),
+            "Component should import ExtendedState type (SessionExtState). Found imports: {:?}",
+            component_imports
+        );
+
         // Check states module dependencies
         let states_module_idx = graph
             .graph
@@ -1528,5 +1624,166 @@ mod tests {
         );
 
         println!("✅ Enhanced discovery methods create expected framework dependencies");
+    }
+
+    #[test]
+    fn test_states_imports_actor_component() {
+        let mut graph = CodeGenGraph::new();
+
+        // Load the test actor config
+        let actor_json = std::fs::read_to_string("tests/actor_config.json")
+            .expect("Should be able to read test actor config");
+        let actor: Actor =
+            serde_json::from_str(&actor_json).expect("Should be able to parse test actor config");
+
+        // Run the enhanced analysis
+        graph
+            .analyze_actor(&actor)
+            .expect("Analysis should succeed");
+
+        // Check that states module imports the actor's component
+        let states_module_idx = graph
+            .graph
+            .find_module_by_path_hierarchical("session::states")
+            .expect("States module should exist");
+
+        let states_imports = graph
+            .get_imports_for_module(states_module_idx)
+            .collect::<Vec<_>>();
+
+        // Should import the SessionComponents from the component module
+        assert!(
+            states_imports
+                .iter()
+                .any(|s| s.contains("SessionComponents")),
+            "States should import the actor's component type (SessionComponents). Found imports: {:?}",
+            states_imports
+        );
+
+        // Should import the MessageSet from messaging module
+        assert!(
+            states_imports
+                .iter()
+                .any(|s| s.contains("SessionMessageSet")),
+            "States should import the MessageSet type (SessionMessageSet). Found imports: {:?}",
+            states_imports
+        );
+
+        // Verify the import paths are correct
+        assert!(
+            states_imports
+                .iter()
+                .any(|s| s.contains("crate::session::component::SessionComponents")),
+            "Should import SessionComponents from correct path. Found imports: {:?}",
+            states_imports
+        );
+
+        assert!(
+            states_imports
+                .iter()
+                .any(|s| s.contains("crate::session::messaging::SessionMessageSet")),
+            "Should import SessionMessageSet from correct path. Found imports: {:?}",
+            states_imports
+        );
+    }
+
+    #[test]
+    fn test_messaging_imports_variant_argument_types() {
+        let mut graph = CodeGenGraph::new();
+
+        let actor_json = std::fs::read_to_string("tests/actor_config.json")
+            .expect("Should be able to read test actor config");
+        let actor: Actor =
+            serde_json::from_str(&actor_json).expect("Should be able to parse test actor config");
+
+        graph
+            .analyze_actor(&actor)
+            .expect("Analysis should succeed");
+
+        let messaging_module_idx = graph
+            .graph
+            .find_module_by_path_hierarchical("session::messaging")
+            .expect("Messaging module should exist");
+
+        let messaging_imports = graph
+            .get_imports_for_module(messaging_module_idx)
+            .collect::<Vec<_>>();
+
+        // Should import framework types
+        assert!(
+            messaging_imports.iter().any(|s| s.contains("Message")),
+            "Messaging should import Message trait. Found imports: {:?}",
+            messaging_imports
+        );
+        assert!(
+            messaging_imports.iter().any(|s| s.contains("MessageSet")),
+            "Messaging should import MessageSet trait. Found imports: {:?}",
+            messaging_imports
+        );
+
+        // Should import types extracted from variant arguments
+        assert!(
+            messaging_imports
+                .iter()
+                .any(|s| s.contains("StandardPayload")),
+            "Messaging should import StandardPayload from variant args. Found imports: {:?}",
+            messaging_imports
+        );
+        assert!(
+            messaging_imports.iter().any(|s| s.contains("TokioRuntime")),
+            "Messaging should import TokioRuntime from variant args. Found imports: {:?}",
+            messaging_imports
+        );
+    }
+
+    #[test]
+    fn test_runtime_imports_essential_types() {
+        let mut graph = CodeGenGraph::new();
+
+        let actor_json = std::fs::read_to_string("tests/actor_config.json")
+            .expect("Should be able to read test actor config");
+        let actor: Actor =
+            serde_json::from_str(&actor_json).expect("Should be able to parse test actor config");
+
+        graph
+            .analyze_actor(&actor)
+            .expect("Analysis should succeed");
+
+        let runtime_module_idx = graph
+            .graph
+            .find_module_by_path_hierarchical("session::runtime")
+            .expect("Runtime module should exist");
+
+        let runtime_imports = graph
+            .get_imports_for_module(runtime_module_idx)
+            .collect::<Vec<_>>();
+
+        // Should import core runtime types
+        assert!(
+            runtime_imports.iter().any(|s| s.contains("Runnable")),
+            "Runtime should import Runnable trait. Found imports: {:?}",
+            runtime_imports
+        );
+        assert!(
+            runtime_imports.iter().any(|s| s.contains("Blox")),
+            "Runtime should import Blox type. Found imports: {:?}",
+            runtime_imports
+        );
+
+        // Should import standard library types
+        assert!(
+            runtime_imports.iter().any(|s| s.contains("std::pin::Pin")),
+            "Runtime should import Pin from std. Found imports: {:?}",
+            runtime_imports
+        );
+
+        // Should import tokio macros
+        assert!(
+            runtime_imports.iter().any(|s| s.contains("tokio::select")),
+            "Runtime should import select macro from tokio. Found imports: {:?}",
+            runtime_imports
+        );
+
+        println!("✅ Runtime module correctly imports essential types");
     }
 }
