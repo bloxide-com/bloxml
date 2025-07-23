@@ -427,7 +427,7 @@ impl CodeGenGraph {
 
         output.push_str("Framework Types:\n");
         for (name, path) in &self.framework_types {
-            output.push_str(&format!("  {} -> {}\n", name, path));
+            output.push_str(&format!("  {name} -> {path}\n"));
         }
 
         output.push_str("\nDiscovered Types:\n");
@@ -440,7 +440,7 @@ impl CodeGenGraph {
 
         output.push_str("\nResolved Types:\n");
         for (name, location) in &self.resolved_types {
-            output.push_str(&format!("  {} -> {:?}\n", name, location));
+            output.push_str(&format!("  {name} -> {location:?}\n"));
         }
 
         output
@@ -1360,8 +1360,7 @@ mod tests {
         for import in &imports {
             assert!(
                 !import.contains("crate::session::component"),
-                "Found self-import in component module: {}",
-                import
+                "Found self-import in component module: {import}"
             );
         }
 
@@ -1467,8 +1466,7 @@ mod tests {
         println!("✅ add_dependency_by_path correctly creates Uses relationships:");
         for entry in uses_connections {
             println!(
-                "  {} --Uses--> {}",
-                "session::component",
+                "  session::component --Uses--> {}",
                 entry.node().name()
             );
         }
