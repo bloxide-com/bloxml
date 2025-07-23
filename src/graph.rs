@@ -334,11 +334,11 @@ impl CodeGenGraph {
                 self.resolve_type_location(&discovered_type.name, &discovered_type.used_in_module);
 
             if matches!(location, TypeLocation::Unknown) {
-                return Err(format!(
+                eprintln!(
                     "Cannot resolve type '{}' used in module '{}'. Please use qualified paths for external types.",
-                    discovered_type.name,
-                    discovered_type.used_in_module
-                ).into());
+                    discovered_type.name, discovered_type.used_in_module
+                );
+                continue;
             }
 
             self.resolved_types
@@ -1295,17 +1295,12 @@ mod tests {
             .graph
             .find_module_by_path_hierarchical(module_path)
             .expect("Module should exist");
-        let mut imports = graph.get_imports_for_module(module_idx);
+        let imports = graph.get_imports_for_module(module_idx).collect::<Vec<_>>();
 
         // Should generate proper import statements
-        assert!(imports.any(|imp| imp.contains("Components")));
-        assert!(imports.any(|imp| imp.contains("TokioMessageHandle")));
-        assert!(imports.any(|imp| imp.contains("CustomArgs")));
-
-        println!("✅ Unified dependency system working:");
-        for import in imports {
-            println!("  {import}");
-        }
+        assert!(imports.iter().any(|s| s.contains("Components")));
+        assert!(imports.iter().any(|s| s.contains("TokioMessageHandle")));
+        assert!(imports.iter().any(|s| s.contains("CustomArgs")));
     }
 
     #[test]
@@ -1355,12 +1350,14 @@ mod tests {
             .graph
             .find_module_by_path_hierarchical(component_module_path)
             .expect("Component module should exist");
-        let mut imports = graph.get_imports_for_module(component_module_idx);
+        let imports = graph
+            .get_imports_for_module(component_module_idx)
+            .collect::<Vec<_>>();
 
-        assert!(imports.any(|imp| imp.contains("CustomArgs")));
-        assert!(imports.any(|imp| imp.contains("Components")));
-        assert!(imports.any(|imp| imp.contains("TokioMessageHandle")));
-        for import in imports {
+        assert!(imports.iter().any(|s| s.contains("CustomArgs")));
+        assert!(imports.iter().any(|s| s.contains("Components")));
+        assert!(imports.iter().any(|s| s.contains("TokioMessageHandle")));
+        for import in &imports {
             assert!(
                 !import.contains("crate::session::component"),
                 "Found self-import in component module: {}",
@@ -1412,12 +1409,14 @@ mod tests {
             .graph
             .find_module_by_path_hierarchical("session::component")
         {
-            let mut imports = graph.get_imports_for_module(component_idx);
+            let imports = graph
+                .get_imports_for_module(component_idx)
+                .collect::<Vec<_>>();
 
-            assert!(imports.any(|imp| imp.contains("CustomArgs")));
-            assert!(imports.any(|imp| imp.contains("Components")));
+            assert!(imports.iter().any(|s| s.contains("CustomArgs")));
+            assert!(imports.iter().any(|s| s.contains("Components")));
             // Should not contain any self-imports
-            for import in imports {
+            for import in &imports {
                 assert!(
                     !import.contains("crate::session::component"),
                     "Found self-import in generated imports: {import}",
@@ -1496,14 +1495,18 @@ mod tests {
             .find_module_by_path_hierarchical("session::component")
             .expect("Component module should exist");
 
-        let mut component_imports = graph.get_imports_for_module(component_module_idx);
+        let component_imports = graph
+            .get_imports_for_module(component_module_idx)
+            .collect::<Vec<_>>();
         // Check that expected framework dependencies are present
         assert!(
-            component_imports.any(|imp| imp.contains("Components")),
+            component_imports.iter().any(|s| s.contains("Components")),
             "Component should import Components trait"
         );
         assert!(
-            component_imports.any(|imp| imp.contains("TokioMessageHandle")),
+            component_imports
+                .iter()
+                .any(|s| s.contains("TokioMessageHandle")),
             "Component should import TokioMessageHandle (has message handles)"
         );
 
@@ -1513,14 +1516,16 @@ mod tests {
             .find_module_by_path_hierarchical("session::states")
             .expect("States module should exist");
 
-        let mut states_imports = graph.get_imports_for_module(states_module_idx);
+        let states_imports = graph
+            .get_imports_for_module(states_module_idx)
+            .collect::<Vec<_>>();
 
         assert!(
-            states_imports.any(|imp| imp.contains("StateMachine")),
+            states_imports.iter().any(|s| s.contains("StateMachine")),
             "States should import StateMachine trait"
         );
         assert!(
-            states_imports.any(|imp| imp.contains("State")),
+            states_imports.iter().any(|s| s.contains("State")),
             "States should import State trait"
         );
 

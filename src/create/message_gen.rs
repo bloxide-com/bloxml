@@ -35,7 +35,7 @@ pub fn generate_message_set(
     let imports_section = if imports.is_empty() {
         String::new()
     } else {
-        format!("{};\n\n", imports.join(";\n"))
+        format!("{}\n\n", imports.join("\n"))
     };
 
     let mut output = format!(

@@ -122,10 +122,12 @@ mod tests {
             .graph
             .find_module_by_path_hierarchical(component_module_path)
             .expect("Component module should exist");
-        let mut imports = graph.get_imports_for_module(component_module_idx);
+        let imports = graph
+            .get_imports_for_module(component_module_idx)
+            .collect::<Vec<_>>();
 
         // Should always detect Components trait usage (every component implements it)
-        assert!(imports.any(|imp| imp.contains("Components")),);
+        assert!(imports.iter().any(|s| s.contains("Components")),);
     }
 
     #[test]
@@ -191,38 +193,70 @@ mod tests {
             .graph
             .find_module_by_path_hierarchical("testactor::component")
             .expect("Component module should exist");
-        let mut component_imports = graph.get_imports_for_module(component_module_idx);
+        let component_imports = graph
+            .get_imports_for_module(component_module_idx)
+            .collect::<Vec<_>>();
 
-        assert!(component_imports.any(|imp| imp.contains("Components")));
-        assert!(component_imports.any(|imp| imp.contains("TokioMessageHandle")));
-        assert!(component_imports.any(|imp| imp.contains("Runtime")));
+        assert!(
+            component_imports
+                .iter()
+                .any(|s| s.contains("bloxide_tokio::components::Components"))
+        );
+        assert!(
+            component_imports
+                .iter()
+                .any(|s| s.contains("bloxide_tokio::components::Runtime"))
+        );
+        assert!(
+            component_imports
+                .iter()
+                .any(|s| s.contains("bloxide_tokio::TokioMessageHandle"))
+        );
 
         // Check states imports using proper API
         let states_module_idx = graph
             .graph
             .find_module_by_path_hierarchical("testactor::states")
             .expect("States module should exist");
-        let mut states_imports = graph.get_imports_for_module(states_module_idx);
+        let states_imports = graph
+            .get_imports_for_module(states_module_idx)
+            .collect::<Vec<_>>();
 
-        assert!(states_imports.any(|imp| imp.contains("StateMachine")));
-        assert!(states_imports.any(|imp| imp.contains("State")));
+        assert!(
+            states_imports
+                .iter()
+                .any(|s| s.contains("bloxide_tokio::state_machine::StateMachine"))
+        );
+        assert!(
+            states_imports
+                .iter()
+                .any(|s| s.contains("bloxide_tokio::state_machine::State"))
+        );
 
         // Check ext_state imports using proper API
         let ext_state_module_idx = graph
             .graph
             .find_module_by_path_hierarchical("testactor::ext_state")
             .expect("ExtState module should exist");
-        let mut ext_state_imports = graph.get_imports_for_module(ext_state_module_idx);
+        let ext_state_imports = graph
+            .get_imports_for_module(ext_state_module_idx)
+            .collect::<Vec<_>>();
 
-        assert!(ext_state_imports.any(|imp| imp.contains("ExtendedState")));
+        assert!(
+            ext_state_imports
+                .iter()
+                .any(|s| s.contains("bloxide_tokio::state_machine::ExtendedState"))
+        );
 
         // Check runtime imports using proper API
         let runtime_module_idx = graph
             .graph
             .find_module_by_path_hierarchical("testactor::runtime")
             .expect("Runtime module should exist");
-        let mut runtime_imports = graph.get_imports_for_module(runtime_module_idx);
+        let runtime_imports = graph
+            .get_imports_for_module(runtime_module_idx)
+            .collect::<Vec<_>>();
 
-        assert!(runtime_imports.any(|imp| imp.contains("Runnable")));
+        assert!(runtime_imports.iter().any(|s| s.contains("Runnable")));
     }
 }
