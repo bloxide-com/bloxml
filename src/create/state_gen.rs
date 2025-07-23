@@ -206,8 +206,8 @@ pub struct {state_name};
 impl State<{component_ident}> for {state_name} {{
     fn handle_message(
         &self,
-        state_machine: &mut StateMachine<{component_ident}>,
-        message: {message_set},
+        _state_machine: &mut StateMachine<{component_ident}>,
+        _message: {message_set},
     ) -> Option<Transition<<{component_ident} as Components>::States, {message_set}>> {{
         None
     }}
