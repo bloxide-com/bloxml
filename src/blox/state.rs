@@ -241,6 +241,6 @@ impl ToRust for States {
 
         let state_enum_impl = self.state_enum.to_rust(generator);
 
-        format!("{}\n\n{}", state_impls, state_enum_impl)
+        format!("{state_impls}\n\n{state_enum_impl}")
     }
 }

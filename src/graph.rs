@@ -1593,22 +1593,19 @@ mod tests {
             component_imports
                 .iter()
                 .any(|s| s.contains("SessionStates")),
-            "Component should import States type (SessionStates). Found imports: {:?}",
-            component_imports
+            "Component should import States type (SessionStates). Found imports: {component_imports:?}"
         );
         assert!(
             component_imports
                 .iter()
                 .any(|s| s.contains("SessionMessageSet")),
-            "Component should import MessageSet type (SessionMessageSet). Found imports: {:?}",
-            component_imports
+            "Component should import MessageSet type (SessionMessageSet). Found imports: {component_imports:?}"
         );
         assert!(
             component_imports
                 .iter()
                 .any(|s| s.contains("SessionExtState")),
-            "Component should import ExtendedState type (SessionExtState). Found imports: {:?}",
-            component_imports
+            "Component should import ExtendedState type (SessionExtState). Found imports: {component_imports:?}"
         );
 
         // Check states module dependencies
@@ -1663,8 +1660,7 @@ mod tests {
             states_imports
                 .iter()
                 .any(|s| s.contains("SessionComponents")),
-            "States should import the actor's component type (SessionComponents). Found imports: {:?}",
-            states_imports
+            "States should import the actor's component type (SessionComponents). Found imports: {states_imports:?}"
         );
 
         // Should import the MessageSet from messaging module
@@ -1672,8 +1668,7 @@ mod tests {
             states_imports
                 .iter()
                 .any(|s| s.contains("SessionMessageSet")),
-            "States should import the MessageSet type (SessionMessageSet). Found imports: {:?}",
-            states_imports
+            "States should import the MessageSet type (SessionMessageSet). Found imports: {states_imports:?}"
         );
 
         // Verify the import paths are correct
@@ -1681,16 +1676,14 @@ mod tests {
             states_imports
                 .iter()
                 .any(|s| s.contains("crate::session::component::SessionComponents")),
-            "Should import SessionComponents from correct path. Found imports: {:?}",
-            states_imports
+            "Should import SessionComponents from correct path. Found imports: {states_imports:?}"
         );
 
         assert!(
             states_imports
                 .iter()
                 .any(|s| s.contains("crate::session::messaging::SessionMessageSet")),
-            "Should import SessionMessageSet from correct path. Found imports: {:?}",
-            states_imports
+            "Should import SessionMessageSet from correct path. Found imports: {states_imports:?}"
         );
     }
 
@@ -1719,13 +1712,11 @@ mod tests {
         // Should import framework types
         assert!(
             messaging_imports.iter().any(|s| s.contains("Message")),
-            "Messaging should import Message trait. Found imports: {:?}",
-            messaging_imports
+            "Messaging should import Message trait. Found imports: {messaging_imports:?}"
         );
         assert!(
             messaging_imports.iter().any(|s| s.contains("MessageSet")),
-            "Messaging should import MessageSet trait. Found imports: {:?}",
-            messaging_imports
+            "Messaging should import MessageSet trait. Found imports: {messaging_imports:?}"
         );
 
         // Should import types extracted from variant arguments
@@ -1733,13 +1724,11 @@ mod tests {
             messaging_imports
                 .iter()
                 .any(|s| s.contains("StandardPayload")),
-            "Messaging should import StandardPayload from variant args. Found imports: {:?}",
-            messaging_imports
+            "Messaging should import StandardPayload from variant args. Found imports: {messaging_imports:?}"
         );
         assert!(
             messaging_imports.iter().any(|s| s.contains("TokioRuntime")),
-            "Messaging should import TokioRuntime from variant args. Found imports: {:?}",
-            messaging_imports
+            "Messaging should import TokioRuntime from variant args. Found imports: {messaging_imports:?}"
         );
     }
 
@@ -1768,27 +1757,23 @@ mod tests {
         // Should import core runtime types
         assert!(
             runtime_imports.iter().any(|s| s.contains("Runnable")),
-            "Runtime should import Runnable trait. Found imports: {:?}",
-            runtime_imports
+            "Runtime should import Runnable trait. Found imports: {runtime_imports:?}"
         );
         assert!(
             runtime_imports.iter().any(|s| s.contains("Blox")),
-            "Runtime should import Blox type. Found imports: {:?}",
-            runtime_imports
+            "Runtime should import Blox type. Found imports: {runtime_imports:?}"
         );
 
         // Should import standard library types
         assert!(
             runtime_imports.iter().any(|s| s.contains("std::pin::Pin")),
-            "Runtime should import Pin from std. Found imports: {:?}",
-            runtime_imports
+            "Runtime should import Pin from std. Found imports: {runtime_imports:?}"
         );
 
         // Should import tokio macros
         assert!(
             runtime_imports.iter().any(|s| s.contains("tokio::select")),
-            "Runtime should import select macro from tokio. Found imports: {:?}",
-            runtime_imports
+            "Runtime should import select macro from tokio. Found imports: {runtime_imports:?}"
         );
 
         println!("✅ Runtime module correctly imports essential types");

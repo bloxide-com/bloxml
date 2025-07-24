@@ -419,7 +419,7 @@ impl Runnable<{actor_name}Components> for Blox<{actor_name}Components> {{
 
         let state_enum_impl = self.generate_state_enum()?;
 
-        let mod_rs_content = format!("{}\n\n{}", state_modules, state_enum_impl);
+        let mod_rs_content = format!("{state_modules}\n\n{state_enum_impl}");
         fs::write(states_path.join("mod.rs"), mod_rs_content)?;
 
         Ok(())
