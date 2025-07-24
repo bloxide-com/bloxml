@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Link, create::ToRust, graph::CodeGenGraph};
+use crate::{
+    Link,
+    create::{ActorGenerator, ToRust},
+};
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 pub struct Field {
@@ -30,7 +33,7 @@ impl Field {
 }
 
 impl ToRust for Field {
-    fn to_rust(&self, _graph: &mut CodeGenGraph) -> String {
+    fn to_rust(&self, _generator: &ActorGenerator) -> String {
         format!("pub {}: {}", self.ident, self.ty)
     }
 }
