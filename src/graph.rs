@@ -51,12 +51,24 @@ impl CodeGenGraph {
 
     const EXT_STATE_DEFAULT_IMPORTS: &[&str] = &["bloxide_tokio::state_machine::ExtendedState"];
 
-    const COMPONENT_DEFAULT_IMPORTS: &[&str] = &["bloxide_tokio::components::Components"];
+    const COMPONENT_DEFAULT_IMPORTS: &[&str] = &[
+        "bloxide_tokio::components::Components",
+        "bloxide_tokio::components::Runtime",
+        "bloxide_tokio::messaging::MessageSender",
+        "bloxide_tokio::TokioMessageHandle",
+    ];
 
     const STATES_DEFAULT_IMPORTS: &[&str] = &[
         "bloxide_tokio::state_machine::StateMachine",
         "bloxide_tokio::state_machine::State",
         "bloxide_tokio::state_machine::StateEnum",
+        "bloxide_tokio::state_machine::Transition",
+        "bloxide_tokio::components::Components",
+    ];
+
+    const SUB_STATES_DEFAULT_IMPORTS: &[&str] = &[
+        "bloxide_tokio::state_machine::StateMachine",
+        "bloxide_tokio::state_machine::State",
         "bloxide_tokio::state_machine::Transition",
         "bloxide_tokio::components::Components",
     ];
@@ -191,21 +203,6 @@ impl CodeGenGraph {
             .iter()
             .for_each(|import| self.add_dependency_by_path(&module_path, import));
 
-        // Add conditional framework dependencies based on component structure
-        if !component.message_handles.handles.is_empty() {
-            self.add_dependency_by_path(&module_path, "bloxide_tokio::TokioMessageHandle");
-        }
-
-        if !component.message_receivers.receivers.is_empty() {
-            self.add_dependency_by_path(&module_path, "bloxide_tokio::components::Runtime");
-            self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::MessageSender");
-            self.add_dependency_by_path(&module_path, "bloxide_tokio::TokioRuntime");
-        }
-
-        if component.message_set.is_some() {
-            self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::MessageSet");
-        }
-
         let states_type_path = format!(
             "crate::{actor_module}::states::{}",
             component.states.state_enum.get().ident
@@ -255,6 +252,32 @@ impl CodeGenGraph {
     ) -> Result<(), Box<dyn Error>> {
         let module_path = format!("{actor_module}::states");
 
+        // Create individual state modules and add their dependencies
+        for state in &component.states.states {
+            let state_module_path =
+                format!("{actor_module}::states::{}", state.ident.to_lowercase());
+            let _ = self.add_generated_module(&state_module_path);
+
+            // Add framework imports for individual state modules
+            Self::SUB_STATES_DEFAULT_IMPORTS
+                .iter()
+                .for_each(|import| self.add_dependency_by_path(&state_module_path, import));
+
+            // Add component type dependency for individual state modules
+            let component_type_path =
+                format!("crate::{actor_module}::component::{}", component.ident);
+            self.add_dependency_by_path(&state_module_path, &component_type_path);
+
+            // Add message set dependency for individual state modules (if exists)
+            if let Some(message_set) = &component.message_set {
+                let message_set_path = format!(
+                    "crate::{actor_module}::messaging::{}",
+                    message_set.get().ident
+                );
+                self.add_dependency_by_path(&state_module_path, &message_set_path);
+            }
+        }
+
         Self::STATES_DEFAULT_IMPORTS
             .iter()
             .for_each(|import| self.add_dependency_by_path(&module_path, import));
@@ -268,6 +291,16 @@ impl CodeGenGraph {
                 message_set.get().ident
             );
             self.add_dependency_by_path(&module_path, &message_set_path);
+        }
+
+        // Add dependencies for individual state types used in StateEnum variants
+        for state in &component.states.states {
+            let state_type_path = format!(
+                "crate::{actor_module}::states::{}::{}",
+                state.ident.to_lowercase(),
+                state.ident
+            );
+            self.add_dependency_by_path(&module_path, &state_type_path);
         }
 
         component
@@ -494,32 +527,6 @@ impl CodeGenGraph {
 
         // Phase 3: Resolve type relationships
         self.resolve_type_relationships()
-    }
-
-    /// Get debug information about discovered and resolved types
-    pub fn debug_type_resolution(&self) -> String {
-        let mut output = String::new();
-        output.push_str("=== Type Resolution Debug ===\n\n");
-
-        output.push_str("Framework Types:\n");
-        for (name, path) in &self.framework_types {
-            output.push_str(&format!("  {name} -> {path}\n"));
-        }
-
-        output.push_str("\nDiscovered Types:\n");
-        for discovered in &self.discovered_types {
-            output.push_str(&format!(
-                "  {} (in {}, context: {:?})\n",
-                discovered.name, discovered.used_in_module, discovered.context
-            ));
-        }
-
-        output.push_str("\nResolved Types:\n");
-        for (name, location) in &self.resolved_types {
-            output.push_str(&format!("  {name} -> {location:?}\n"));
-        }
-
-        output
     }
 }
 
