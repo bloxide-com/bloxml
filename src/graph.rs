@@ -51,12 +51,24 @@ impl CodeGenGraph {
 
     const EXT_STATE_DEFAULT_IMPORTS: &[&str] = &["bloxide_tokio::state_machine::ExtendedState"];
 
-    const COMPONENT_DEFAULT_IMPORTS: &[&str] = &["bloxide_tokio::components::Components"];
+    const COMPONENT_DEFAULT_IMPORTS: &[&str] = &[
+        "bloxide_tokio::components::Components",
+        "bloxide_tokio::components::Runtime",
+        "bloxide_tokio::messaging::MessageSender",
+        "bloxide_tokio::TokioMessageHandle",
+    ];
 
     const STATES_DEFAULT_IMPORTS: &[&str] = &[
         "bloxide_tokio::state_machine::StateMachine",
         "bloxide_tokio::state_machine::State",
         "bloxide_tokio::state_machine::StateEnum",
+        "bloxide_tokio::state_machine::Transition",
+        "bloxide_tokio::components::Components",
+    ];
+
+    const SUB_STATES_DEFAULT_IMPORTS: &[&str] = &[
+        "bloxide_tokio::state_machine::StateMachine",
+        "bloxide_tokio::state_machine::State",
         "bloxide_tokio::state_machine::Transition",
         "bloxide_tokio::components::Components",
     ];
@@ -191,21 +203,6 @@ impl CodeGenGraph {
             .iter()
             .for_each(|import| self.add_dependency_by_path(&module_path, import));
 
-        // Add conditional framework dependencies based on component structure
-        if !component.message_handles.handles.is_empty() {
-            self.add_dependency_by_path(&module_path, "bloxide_tokio::TokioMessageHandle");
-        }
-
-        if !component.message_receivers.receivers.is_empty() {
-            self.add_dependency_by_path(&module_path, "bloxide_tokio::components::Runtime");
-            self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::MessageSender");
-            self.add_dependency_by_path(&module_path, "bloxide_tokio::TokioRuntime");
-        }
-
-        if component.message_set.is_some() {
-            self.add_dependency_by_path(&module_path, "bloxide_tokio::messaging::MessageSet");
-        }
-
         let states_type_path = format!(
             "crate::{actor_module}::states::{}",
             component.states.state_enum.get().ident
@@ -255,6 +252,32 @@ impl CodeGenGraph {
     ) -> Result<(), Box<dyn Error>> {
         let module_path = format!("{actor_module}::states");
 
+        // Create individual state modules and add their dependencies
+        for state in &component.states.states {
+            let state_module_path =
+                format!("{actor_module}::states::{}", state.ident.to_lowercase());
+            let _ = self.add_generated_module(&state_module_path);
+
+            // Add framework imports for individual state modules
+            Self::SUB_STATES_DEFAULT_IMPORTS
+                .iter()
+                .for_each(|import| self.add_dependency_by_path(&state_module_path, import));
+
+            // Add component type dependency for individual state modules
+            let component_type_path =
+                format!("crate::{actor_module}::component::{}", component.ident);
+            self.add_dependency_by_path(&state_module_path, &component_type_path);
+
+            // Add message set dependency for individual state modules (if exists)
+            if let Some(message_set) = &component.message_set {
+                let message_set_path = format!(
+                    "crate::{actor_module}::messaging::{}",
+                    message_set.get().ident
+                );
+                self.add_dependency_by_path(&state_module_path, &message_set_path);
+            }
+        }
+
         Self::STATES_DEFAULT_IMPORTS
             .iter()
             .for_each(|import| self.add_dependency_by_path(&module_path, import));
@@ -268,6 +291,16 @@ impl CodeGenGraph {
                 message_set.get().ident
             );
             self.add_dependency_by_path(&module_path, &message_set_path);
+        }
+
+        // Add dependencies for individual state types used in StateEnum variants
+        for state in &component.states.states {
+            let state_type_path = format!(
+                "crate::{actor_module}::states::{}::{}",
+                state.ident.to_lowercase(),
+                state.ident
+            );
+            self.add_dependency_by_path(&module_path, &state_type_path);
         }
 
         component
@@ -494,32 +527,6 @@ impl CodeGenGraph {
 
         // Phase 3: Resolve type relationships
         self.resolve_type_relationships()
-    }
-
-    /// Get debug information about discovered and resolved types
-    pub fn debug_type_resolution(&self) -> String {
-        let mut output = String::new();
-        output.push_str("=== Type Resolution Debug ===\n\n");
-
-        output.push_str("Framework Types:\n");
-        for (name, path) in &self.framework_types {
-            output.push_str(&format!("  {name} -> {path}\n"));
-        }
-
-        output.push_str("\nDiscovered Types:\n");
-        for discovered in &self.discovered_types {
-            output.push_str(&format!(
-                "  {} (in {}, context: {:?})\n",
-                discovered.name, discovered.used_in_module, discovered.context
-            ));
-        }
-
-        output.push_str("\nResolved Types:\n");
-        for (name, location) in &self.resolved_types {
-            output.push_str(&format!("  {name} -> {location:?}\n"));
-        }
-
-        output
     }
 }
 
@@ -1586,22 +1593,19 @@ mod tests {
             component_imports
                 .iter()
                 .any(|s| s.contains("SessionStates")),
-            "Component should import States type (SessionStates). Found imports: {:?}",
-            component_imports
+            "Component should import States type (SessionStates). Found imports: {component_imports:?}"
         );
         assert!(
             component_imports
                 .iter()
                 .any(|s| s.contains("SessionMessageSet")),
-            "Component should import MessageSet type (SessionMessageSet). Found imports: {:?}",
-            component_imports
+            "Component should import MessageSet type (SessionMessageSet). Found imports: {component_imports:?}"
         );
         assert!(
             component_imports
                 .iter()
                 .any(|s| s.contains("SessionExtState")),
-            "Component should import ExtendedState type (SessionExtState). Found imports: {:?}",
-            component_imports
+            "Component should import ExtendedState type (SessionExtState). Found imports: {component_imports:?}"
         );
 
         // Check states module dependencies
@@ -1656,8 +1660,7 @@ mod tests {
             states_imports
                 .iter()
                 .any(|s| s.contains("SessionComponents")),
-            "States should import the actor's component type (SessionComponents). Found imports: {:?}",
-            states_imports
+            "States should import the actor's component type (SessionComponents). Found imports: {states_imports:?}"
         );
 
         // Should import the MessageSet from messaging module
@@ -1665,8 +1668,7 @@ mod tests {
             states_imports
                 .iter()
                 .any(|s| s.contains("SessionMessageSet")),
-            "States should import the MessageSet type (SessionMessageSet). Found imports: {:?}",
-            states_imports
+            "States should import the MessageSet type (SessionMessageSet). Found imports: {states_imports:?}"
         );
 
         // Verify the import paths are correct
@@ -1674,16 +1676,14 @@ mod tests {
             states_imports
                 .iter()
                 .any(|s| s.contains("crate::session::component::SessionComponents")),
-            "Should import SessionComponents from correct path. Found imports: {:?}",
-            states_imports
+            "Should import SessionComponents from correct path. Found imports: {states_imports:?}"
         );
 
         assert!(
             states_imports
                 .iter()
                 .any(|s| s.contains("crate::session::messaging::SessionMessageSet")),
-            "Should import SessionMessageSet from correct path. Found imports: {:?}",
-            states_imports
+            "Should import SessionMessageSet from correct path. Found imports: {states_imports:?}"
         );
     }
 
@@ -1712,13 +1712,11 @@ mod tests {
         // Should import framework types
         assert!(
             messaging_imports.iter().any(|s| s.contains("Message")),
-            "Messaging should import Message trait. Found imports: {:?}",
-            messaging_imports
+            "Messaging should import Message trait. Found imports: {messaging_imports:?}"
         );
         assert!(
             messaging_imports.iter().any(|s| s.contains("MessageSet")),
-            "Messaging should import MessageSet trait. Found imports: {:?}",
-            messaging_imports
+            "Messaging should import MessageSet trait. Found imports: {messaging_imports:?}"
         );
 
         // Should import types extracted from variant arguments
@@ -1726,13 +1724,11 @@ mod tests {
             messaging_imports
                 .iter()
                 .any(|s| s.contains("StandardPayload")),
-            "Messaging should import StandardPayload from variant args. Found imports: {:?}",
-            messaging_imports
+            "Messaging should import StandardPayload from variant args. Found imports: {messaging_imports:?}"
         );
         assert!(
             messaging_imports.iter().any(|s| s.contains("TokioRuntime")),
-            "Messaging should import TokioRuntime from variant args. Found imports: {:?}",
-            messaging_imports
+            "Messaging should import TokioRuntime from variant args. Found imports: {messaging_imports:?}"
         );
     }
 
@@ -1761,27 +1757,23 @@ mod tests {
         // Should import core runtime types
         assert!(
             runtime_imports.iter().any(|s| s.contains("Runnable")),
-            "Runtime should import Runnable trait. Found imports: {:?}",
-            runtime_imports
+            "Runtime should import Runnable trait. Found imports: {runtime_imports:?}"
         );
         assert!(
             runtime_imports.iter().any(|s| s.contains("Blox")),
-            "Runtime should import Blox type. Found imports: {:?}",
-            runtime_imports
+            "Runtime should import Blox type. Found imports: {runtime_imports:?}"
         );
 
         // Should import standard library types
         assert!(
             runtime_imports.iter().any(|s| s.contains("std::pin::Pin")),
-            "Runtime should import Pin from std. Found imports: {:?}",
-            runtime_imports
+            "Runtime should import Pin from std. Found imports: {runtime_imports:?}"
         );
 
         // Should import tokio macros
         assert!(
             runtime_imports.iter().any(|s| s.contains("tokio::select")),
-            "Runtime should import select macro from tokio. Found imports: {:?}",
-            runtime_imports
+            "Runtime should import select macro from tokio. Found imports: {runtime_imports:?}"
         );
 
         println!("✅ Runtime module correctly imports essential types");

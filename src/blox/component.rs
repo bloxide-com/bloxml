@@ -4,7 +4,7 @@ use super::{
     message_set::MessageSet,
     state::States,
 };
-use crate::{create::ToRust, graph::CodeGenGraph};
+use crate::create::{ActorGenerator, ToRust};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
@@ -41,7 +41,7 @@ impl Component {
 }
 
 impl ToRust for Component {
-    fn to_rust(&self, graph: &mut CodeGenGraph) -> String {
+    fn to_rust(&self, generator: &ActorGenerator) -> String {
         let actor_name = &self.ident.split("Components").next().unwrap();
         let component_name = &self.ident;
         let ext_state_name = &self.ext_state.ident();
@@ -55,8 +55,8 @@ impl ToRust for Component {
         let handles_ident = &self.message_handles.ident;
         let receivers_ident = &self.message_receivers.ident;
 
-        let handles = self.message_handles.to_rust(graph);
-        let receivers = self.message_receivers.to_rust(graph);
+        let handles = self.message_handles.to_rust(generator);
+        let receivers = self.message_receivers.to_rust(generator);
 
         format!(
             r#"
@@ -105,8 +105,16 @@ mod tests {
             None,
             ExtState::default(),
         );
-        let mut graph = crate::graph::CodeGenGraph::new();
-        let rust_code = component.to_rust(&mut graph);
+        // Create a test actor for the generator
+        let actor = crate::blox::actor::Actor::new(
+            "Actor",
+            std::path::PathBuf::from("test"),
+            create_test_states(),
+            None,
+        );
+        let generator =
+            crate::create::ActorGenerator::new(actor).expect("Generator creation should work");
+        let rust_code = component.to_rust(&generator);
 
         assert!(rust_code.contains("pub struct ActorHandles"));
         assert!(rust_code.contains("pub struct ActorReceivers"));

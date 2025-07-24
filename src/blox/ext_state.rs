@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Method, create::ToRust, field::Field, graph::CodeGenGraph};
+use crate::{
+    Method,
+    create::{ActorGenerator, ToRust},
+    field::Field,
+};
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Default, Clone)]
 pub struct InitArgs {
@@ -62,11 +66,11 @@ impl ExtState {
 }
 
 impl ToRust for ExtState {
-    fn to_rust(&self, graph: &mut CodeGenGraph) -> String {
+    fn to_rust(&self, generator: &ActorGenerator) -> String {
         let fields = self
             .fields
             .iter()
-            .map(|f| f.to_rust(graph))
+            .map(|f| f.to_rust(generator))
             .collect::<Vec<_>>()
             .join(",\n\t");
 
@@ -80,7 +84,7 @@ impl ToRust for ExtState {
         let methods = self
             .methods
             .iter()
-            .map(|m| m.to_rust(graph))
+            .map(|m| m.to_rust(generator))
             .collect::<Vec<_>>()
             .join("\n\t");
 

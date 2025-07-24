@@ -16,5 +16,5 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     let actor = Actor::from_json_file(&args.json_file)?;
-    create::create_module(&actor)
+    create::create_module(actor)
 }
