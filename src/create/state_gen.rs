@@ -566,12 +566,10 @@ impl Default for {enum_name} {{
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::{
-        blox::{
-            enums::EnumDef,
-            state::{State, StateEnum, States},
-        },
+        blox::enums::EnumDef,
+        blox::state::{State, StateEnum, States},
+        create::ActorGenerator,
         tests::create_test_actor,
     };
 
@@ -585,9 +583,12 @@ mod tests {
             StateEnum::new(EnumDef::new("ActorStates", vec![])),
         );
         actor.component.states = states;
-        let impl_content =
-            generate_inner_states(&actor, &state).expect("Failed to generate state impls");
-        let ident = state.ident;
+        let generator = ActorGenerator::new(actor).expect("Generator creation should succeed");
+        let create_state = &generator.actor().component.states.states[0];
+        let impl_content = generator
+            .generate_state_impl(create_state)
+            .expect("Failed to generate state impl");
+        let ident = &create_state.ident;
         eprintln!("State impl for {ident}: {impl_content}");
 
         assert!(impl_content.contains(&format!("pub struct {ident}")));
@@ -597,7 +598,7 @@ mod tests {
     #[test]
     fn test_generate_state_enum_impl() {
         let mut actor = create_test_actor();
-        let component_ident = &actor.component.ident;
+        let component_ident = actor.component.ident.clone();
         let state_enum = StateEnum::new(EnumDef::new("ActorStates", vec![]));
 
         let states = States::new(
@@ -611,14 +612,16 @@ mod tests {
 
         actor.component.states = states;
 
-        let impl_content =
-            generate_state_enum_impl(&actor).expect("Failed to generate state enum impl");
+        let generator = ActorGenerator::new(actor).expect("Generator creation should succeed");
+        let impl_content = generator
+            .generate_state_enum()
+            .expect("Failed to generate state enum impl");
         eprintln!("State enum impl: {impl_content}");
 
         assert!(impl_content.contains("pub enum ActorStates"));
         assert!(impl_content.contains(&format!("impl State<{component_ident}> for ActorStates")));
 
-        for state in &actor.component.states.states {
+        for state in &generator.actor().component.states.states {
             assert!(impl_content.contains(&format!("    {}({})", state.ident, state.ident)));
         }
 
